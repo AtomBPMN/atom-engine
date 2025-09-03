@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
+	"atom-engine/proto/incidents/incidentspb"
 	"atom-engine/proto/jobs/jobspb"
 	"atom-engine/proto/messages/messagespb"
 	"atom-engine/proto/parser/parserpb"
@@ -50,6 +51,7 @@ type CoreInterface interface {
 	GetJobsComponent() interface{}
 	GetParserComponent() interface{}
 	GetExpressionComponent() interface{}
+	GetIncidentsComponent() interface{}
 	GetStorage() interface{}
 
 	// JSON Message Routing
@@ -59,6 +61,7 @@ type CoreInterface interface {
 	WaitForParserResponse(timeoutMs int) (string, error)
 	WaitForJobsResponse(timeoutMs int) (string, error)
 	WaitForMessagesResponse(timeoutMs int) (string, error)
+	WaitForIncidentsResponse(timeoutMs int) (string, error)
 }
 
 // TimewheelComponentInterface defines timewheel component interface
@@ -170,6 +173,9 @@ func (s *Server) Start() error {
 
 	// Register jobs service
 	jobspb.RegisterJobsServiceServer(s.grpcServer, &jobsServiceServer{core: s.core})
+
+	// Register incidents service
+	incidentspb.RegisterIncidentsServiceServer(s.grpcServer, &incidentsServiceServer{core: s.core})
 
 	// Enable reflection for development
 	reflection.Register(s.grpcServer)

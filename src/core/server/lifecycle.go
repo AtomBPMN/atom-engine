@@ -109,6 +109,11 @@ func (c *Core) Start() error {
 
 	// Initialize and start jobs component
 	// Инициализируем и запускаем jobs компонент
+
+	// Set core interface for incident management
+	// Устанавливаем интерфейс core для управления инцидентами
+	c.jobsComp.SetCore(c)
+
 	err = c.jobsComp.Start()
 	if err != nil {
 		logger.Error("Failed to start jobs component", logger.String("error", err.Error()))
@@ -137,6 +142,20 @@ func (c *Core) Start() error {
 		return fmt.Errorf("failed to start expression component: %w", err)
 	}
 
+	// Initialize and start incidents component
+	// Инициализируем и запускаем incidents компонент
+	err = c.incidentsComp.Init()
+	if err != nil {
+		logger.Error("Failed to initialize incidents component", logger.String("error", err.Error()))
+		return fmt.Errorf("failed to initialize incidents component: %w", err)
+	}
+
+	err = c.incidentsComp.Start()
+	if err != nil {
+		logger.Error("Failed to start incidents component", logger.String("error", err.Error()))
+		return fmt.Errorf("failed to start incidents component: %w", err)
+	}
+
 	// Log startup event
 	err = c.storage.LogSystemEvent(models.EventTypeStartup, models.StatusInProgress, "Starting Atom Engine")
 	if err != nil {
@@ -154,9 +173,13 @@ func (c *Core) Start() error {
 	// Запускаем обработчик ответов timewheel
 	go c.processTimewheelResponses()
 
-	// Start jobs response processor - TEMPORARILY DISABLED for gRPC response testing
-	// Запускаем обработчик ответов jobs - ВРЕМЕННО ОТКЛЮЧЕН для тестирования gRPC ответов
-	// go c.processJobsResponses()
+	// Start jobs response processor
+	// Запускаем обработчик ответов jobs
+	go c.processJobsResponses()
+
+	// Start incidents response processor - DISABLED for gRPC direct response waiting
+	// Запускаем обработчик ответов incidents - ОТКЛЮЧЕН для прямого ожидания gRPC ответов
+	// go c.processIncidentsResponses()
 
 	// Start messages response processor - TEMPORARILY DISABLED for gRPC response testing
 	// Запускаем обработчик ответов messages - ВРЕМЕННО ОТКЛЮЧЕН для тестирования gRPC ответов
@@ -215,6 +238,17 @@ func (c *Core) Stop() error {
 			logger.Error("Failed to stop expression component", logger.String("error", err.Error()))
 		} else {
 			logger.Info("Expression component stopped")
+		}
+	}
+
+	// Stop incidents component
+	// Останавливаем incidents компонент
+	if c.incidentsComp != nil {
+		err := c.incidentsComp.Stop()
+		if err != nil {
+			logger.Error("Failed to stop incidents component", logger.String("error", err.Error()))
+		} else {
+			logger.Info("Incidents component stopped")
 		}
 	}
 

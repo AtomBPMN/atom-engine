@@ -17,8 +17,15 @@ import (
 	"atom-engine/src/core/config"
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
+	"atom-engine/src/incidents"
 	"atom-engine/src/storage"
 )
+
+// CoreInterface defines core methods needed by jobs component
+// Определяет методы core необходимые jobs компоненту
+type CoreInterface interface {
+	GetIncidentsComponent() interface{}
+}
 
 // Component handles job management operations
 type Component struct {
@@ -28,6 +35,7 @@ type Component struct {
 	manager         *JobManager
 	isRunning       bool
 	responseChannel chan string
+	core            CoreInterface
 }
 
 // NewComponent creates new jobs component
@@ -88,6 +96,78 @@ func (c *Component) Stop() error {
 	}
 
 	c.logger.Info("Jobs component stopped")
+	return nil
+}
+
+// SetCore sets core interface for accessing other components
+// Устанавливает core интерфейс для доступа к другим компонентам
+func (c *Component) SetCore(core CoreInterface) {
+	c.core = core
+}
+
+// CreateIncident creates an incident through incidents component
+// Создает инцидент через incidents компонент
+func (c *Component) CreateIncident(incidentType, elementID, processInstanceID, jobKey, jobType, workerID, errorMessage string, retries int) error {
+	if c.core == nil {
+		c.logger.Warn("Core interface not set, cannot create incident")
+		return fmt.Errorf("core interface not set")
+	}
+
+	incidentsComponent := c.core.GetIncidentsComponent()
+	if incidentsComponent == nil {
+		c.logger.Warn("Incidents component not available")
+		return fmt.Errorf("incidents component not available")
+	}
+
+	// Type assertion to incidents component interface
+	type IncidentsInterface interface {
+		CreateJobFailureIncident(ctx context.Context, jobKey, elementID, processInstanceID, message string, retries int) (*incidents.Incident, error)
+		CreateBPMNErrorIncident(ctx context.Context, elementID, processInstanceID, errorCode, message string) (*incidents.Incident, error)
+	}
+
+	incidents, ok := incidentsComponent.(IncidentsInterface)
+	if !ok {
+		c.logger.Error("Failed to cast incidents component to interface")
+		return fmt.Errorf("failed to cast incidents component")
+	}
+
+	ctx := context.Background()
+	var err error
+
+	switch incidentType {
+	case "JOB_FAILURE":
+		_, err = incidents.CreateJobFailureIncident(ctx, jobKey, elementID, processInstanceID, errorMessage, retries)
+		if err != nil {
+			c.logger.Error("Failed to create job failure incident",
+				logger.String("jobKey", jobKey),
+				logger.String("elementID", elementID),
+				logger.String("error", err.Error()))
+			return fmt.Errorf("failed to create job failure incident: %w", err)
+		}
+		c.logger.Info("Job failure incident created successfully",
+			logger.String("jobKey", jobKey),
+			logger.String("elementID", elementID))
+
+	case "BPMN_ERROR":
+		_, err = incidents.CreateBPMNErrorIncident(ctx, elementID, processInstanceID, jobType, errorMessage)
+		if err != nil {
+			c.logger.Error("Failed to create BPMN error incident",
+				logger.String("jobKey", jobKey),
+				logger.String("elementID", elementID),
+				logger.String("error", err.Error()))
+			return fmt.Errorf("failed to create BPMN error incident: %w", err)
+		}
+		c.logger.Info("BPMN error incident created successfully",
+			logger.String("jobKey", jobKey),
+			logger.String("elementID", elementID))
+
+	default:
+		c.logger.Warn("Unknown incident type",
+			logger.String("type", incidentType),
+			logger.String("jobKey", jobKey))
+		return fmt.Errorf("unknown incident type: %s", incidentType)
+	}
+
 	return nil
 }
 
@@ -224,6 +304,17 @@ func (c *Component) FailJob(jobKey string, retries int, errorMessage string) err
 	// Delegate to job manager
 	retryBackoff := 5 * time.Second
 	return c.manager.FailJob(context.Background(), jobKey, retries, errorMessage, retryBackoff)
+}
+
+// ThrowError throws BPMN error for job
+func (c *Component) ThrowError(jobKey string, errorCode, errorMessage string) error {
+	c.logger.Info("Throwing error for job",
+		logger.String("jobKey", jobKey),
+		logger.String("errorCode", errorCode),
+		logger.String("errorMessage", errorMessage))
+
+	// Delegate to job manager
+	return c.manager.ThrowError(context.Background(), jobKey, errorCode, errorMessage, nil)
 }
 
 // GetJobStats returns job statistics

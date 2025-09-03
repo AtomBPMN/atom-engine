@@ -314,6 +314,41 @@ func (s *jobsServiceServer) FailJob(ctx context.Context, req *jobspb.FailJobRequ
 	}, nil
 }
 
+// ThrowError throws BPMN error for job
+func (s *jobsServiceServer) ThrowError(ctx context.Context, req *jobspb.ThrowErrorRequest) (*jobspb.ThrowErrorResponse, error) {
+	logger.Info("ThrowError gRPC request",
+		logger.String("job_key", req.JobKey),
+		logger.String("error_code", req.ErrorCode),
+		logger.String("error_message", req.ErrorMessage))
+
+	// Get jobs component from core
+	component, err := getJobsComponent(s.core)
+	if err != nil {
+		return &jobspb.ThrowErrorResponse{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// Call ThrowError on component
+	err = component.ThrowError(req.JobKey, req.ErrorCode, req.ErrorMessage)
+	if err != nil {
+		logger.Error("Failed to throw error for job", logger.String("error", err.Error()))
+		return &jobspb.ThrowErrorResponse{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	logger.Info("Job error thrown successfully", 
+		logger.String("job_key", req.JobKey),
+		logger.String("error_code", req.ErrorCode))
+
+	return &jobspb.ThrowErrorResponse{
+		Success: true,
+	}, nil
+}
+
 // GetJobStats gets job statistics
 func (s *jobsServiceServer) GetJobStats(ctx context.Context, req *jobspb.GetJobStatsRequest) (*jobspb.GetJobStatsResponse, error) {
 	logger.Info("GetJobStats gRPC request")

@@ -49,6 +49,7 @@ type JobManager struct {
 // Определяет интерфейс для обработки callback'ов job'ов
 type JobsComponentInterface interface {
 	SendJobCallback(response string)
+	CreateIncident(incidentType, elementID, processInstanceID, jobKey, jobType, workerID, errorMessage string, retries int) error
 }
 
 // WorkerInfo contains information about job worker
@@ -169,7 +170,7 @@ func (jm *JobManager) ActivateJobs(ctx context.Context, jobType, workerID string
 			jm.logger.Error("Failed to re-read job", logger.String("error", err.Error()))
 			continue
 		}
-		
+
 		if freshJob == nil || freshJob.Status != models.JobStatusPending {
 			jm.logger.Warn("Job no longer pending - skipping",
 				logger.String("jobID", job.ID),
@@ -333,6 +334,28 @@ func (jm *JobManager) FailJob(ctx context.Context, jobID string, retries int, er
 					logger.String("jobID", job.ID),
 					logger.String("elementID", job.ElementID))
 			}
+
+			// Create incident for job failure when no retries left
+			// Создаем инцидент для job failure когда retries закончились
+			err := jm.component.CreateIncident(
+				"JOB_FAILURE",
+				job.ElementID,
+				job.ProcessInstanceID,
+				job.ID,
+				job.Type,
+				job.WorkerID,
+				errorMessage,
+				job.Retries,
+			)
+			if err != nil {
+				jm.logger.Error("Failed to create incident for job failure",
+					logger.String("jobID", job.ID),
+					logger.String("error", err.Error()))
+			} else {
+				jm.logger.Info("Incident created for job failure",
+					logger.String("jobID", job.ID),
+					logger.String("elementID", job.ElementID))
+			}
 		}
 	}
 
@@ -353,17 +376,23 @@ func (jm *JobManager) ThrowError(ctx context.Context, jobID, errorCode, errorMes
 		return fmt.Errorf("job not found: %s", jobID)
 	}
 
+	// Initialize job variables if needed
+	if job.Variables == nil {
+		job.Variables = make(map[string]interface{})
+	}
+
 	// Update job variables if provided
 	if variables != nil {
-		if job.Variables == nil {
-			job.Variables = make(map[string]interface{})
-		}
 		for k, v := range variables {
 			job.Variables[k] = v
 		}
 	}
 
-	// Add error information to metadata
+	// Add error information to variables for callback processing
+	job.Variables["errorCode"] = errorCode
+	job.Variables["errorMessage"] = errorMessage
+
+	// Add error information to metadata for storage
 	if job.Metadata == nil {
 		job.Metadata = make(map[string]string)
 	}
@@ -378,6 +407,53 @@ func (jm *JobManager) ThrowError(ctx context.Context, jobID, errorCode, errorMes
 
 	// Update worker info
 	jm.updateWorkerActiveJobs(job.WorkerID, -1)
+
+	// Send error callback to process component
+	// Отправляем error callback в process компонент
+	callback := JobCallback{
+		JobID:        job.ID,
+		ElementID:    job.ElementID,
+		TokenID:      job.TokenID,
+		Status:       "ERROR_THROWN", // Different from "FAILED"
+		ErrorMessage: errorMessage,
+		ErrorCode:    errorCode,
+		Variables:    job.Variables,
+		CompletedAt:  time.Now(),
+	}
+
+	if jm.component != nil {
+		if callbackJSON, err := json.Marshal(callback); err == nil {
+			jm.component.SendJobCallback(string(callbackJSON))
+			jm.logger.Info("Job error callback sent",
+				logger.String("jobID", job.ID),
+				logger.String("elementID", job.ElementID),
+				logger.String("errorCode", errorCode))
+		}
+
+		// Create incident for BPMN error (only if no boundary event to handle it)
+		// Создаем инцидент для BPMN ошибки (только если нет boundary event для обработки)
+		err := jm.component.CreateIncident(
+			"BPMN_ERROR",
+			job.ElementID,
+			job.ProcessInstanceID,
+			job.ID,
+			job.Type,
+			job.WorkerID,
+			fmt.Sprintf("%s: %s", errorCode, errorMessage),
+			0, // BPMN errors don't have retries
+		)
+		if err != nil {
+			jm.logger.Error("Failed to create incident for BPMN error",
+				logger.String("jobID", job.ID),
+				logger.String("errorCode", errorCode),
+				logger.String("error", err.Error()))
+		} else {
+			jm.logger.Info("Incident created for BPMN error",
+				logger.String("jobID", job.ID),
+				logger.String("elementID", job.ElementID),
+				logger.String("errorCode", errorCode))
+		}
+	}
 
 	jm.logger.Info("Error thrown for job", logger.String("errorCode", errorCode))
 	return nil

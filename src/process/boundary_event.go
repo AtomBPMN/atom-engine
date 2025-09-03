@@ -240,16 +240,33 @@ func (bee *BoundaryEventExecutor) handleSignalBoundaryEvent(token *models.Token,
 // handleErrorBoundaryEvent handles error boundary events
 // Обрабатывает граничные события ошибок
 func (bee *BoundaryEventExecutor) handleErrorBoundaryEvent(token *models.Token, element map[string]interface{}, eventDef map[string]interface{}, cancelActivity bool) (*ExecutionResult, error) {
-	logger.Info("Handling error boundary event",
+	logger.Info("Handling error boundary event during setup",
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID),
 		logger.Bool("cancel_activity", cancelActivity))
 
-	// TODO: Implement error catching logic
-	// ТОДО: Реализовать логику ловли ошибок
-	logger.Info("Error boundary event - error catching not yet implemented")
+	// Error boundary events are passive - they don't execute immediately
+	// Instead, they are registered as subscriptions when the attached activity starts
+	// The actual error handling happens in job failure callbacks
+	//
+	// Граничные события ошибок пассивны - они не выполняются сразу
+	// Вместо этого они регистрируются как подписки при запуске прикрепленной активности
+	// Фактическая обработка ошибок происходит в callback'ах провалов job'ов
 
-	return bee.executeRegularBoundaryEvent(token, element, cancelActivity)
+	logger.Info("Error boundary event is passive - handled via job failure callbacks",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
+	// For error boundary events, we don't execute them directly
+	// They are handled by the error boundary registry system
+	// Return a "waiting" state to indicate this boundary event is monitoring
+	return &ExecutionResult{
+		Success:      true,
+		TokenUpdated: false,
+		NextElements: []string{}, // No immediate next elements
+		WaitingFor:   fmt.Sprintf("error_boundary:%s", token.CurrentElementID),
+		Completed:    false, // Remains active until error occurs or parent completes
+	}, nil
 }
 
 // executeRegularBoundaryEvent executes regular boundary event flow

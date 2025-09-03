@@ -62,6 +62,25 @@ func (ste *ServiceTaskExecutor) Execute(token *models.Token, element map[string]
 		// Продолжаем выполнение - создание boundary таймеров не критично
 	}
 
+	// Create error boundary subscriptions when token enters activity
+	// Создаем подписки на граничные события ошибок когда токен входит в активность
+	logger.Info("About to create error boundary subscriptions",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
+	if err := ste.createErrorBoundaries(token, element); err != nil {
+		logger.Error("Failed to create error boundary subscriptions",
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("error", err.Error()))
+		// Continue execution - error boundary creation is not critical
+		// Продолжаем выполнение - создание граничных событий ошибок не критично
+	}
+
+	logger.Info("Completed error boundary subscriptions processing",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
 	// Extract task definition from extension elements
 	taskDefinition, err := ste.extractTaskDefinition(element)
 	if err != nil {
@@ -495,4 +514,205 @@ func (ste *ServiceTaskExecutor) createBoundaryTimerForEvent(token *models.Token,
 	}
 
 	return nil
+}
+
+// createErrorBoundaries creates error boundary subscriptions for activity
+// Создает подписки на граничные события ошибок для активности
+func (ste *ServiceTaskExecutor) createErrorBoundaries(token *models.Token, element map[string]interface{}) error {
+	if ste.processComponent == nil {
+		return nil // No process component available
+	}
+
+	// Get BPMN process for this token
+	// Получаем BPMN процесс для данного токена
+	bpmnProcess, err := ste.processComponent.GetBPMNProcessForToken(token)
+	if err != nil {
+		return fmt.Errorf("failed to get BPMN process: %w", err)
+	}
+
+	// Find boundary events attached to this activity
+	// Находим boundary события прикрепленные к данной активности
+	boundaryEvents := ste.findBoundaryEventsForActivity(token.CurrentElementID, bpmnProcess)
+	if len(boundaryEvents) == 0 {
+		return nil // No boundary events found
+	}
+
+	logger.Info("Found boundary events for error boundary registration",
+		logger.String("activity_id", token.CurrentElementID),
+		logger.Int("boundary_events_count", len(boundaryEvents)))
+
+	// Create error boundary subscriptions for error boundary events
+	// Создаем подписки на граничные события ошибок для error boundary событий
+	for eventID, boundaryEvent := range boundaryEvents {
+		if err := ste.createErrorBoundaryForEvent(token, eventID, boundaryEvent, bpmnProcess); err != nil {
+			logger.Error("Failed to create error boundary subscription",
+				logger.String("token_id", token.TokenID),
+				logger.String("event_id", eventID),
+				logger.String("error", err.Error()))
+			continue // Continue with other events
+		}
+	}
+
+	return nil
+}
+
+// createErrorBoundaryForEvent creates error boundary subscription for specific event
+// Создает подписку на граничное событие ошибки для конкретного события
+func (ste *ServiceTaskExecutor) createErrorBoundaryForEvent(token *models.Token, eventID string, boundaryEvent interface{}, bpmnProcess interface{}) error {
+	boundaryEventMap, ok := boundaryEvent.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid boundary event structure")
+	}
+
+	// Check if this is an error boundary event
+	eventDefinitions, exists := boundaryEventMap["event_definitions"]
+	if !exists {
+		return nil // No event definitions - skip
+	}
+
+	eventDefList, ok := eventDefinitions.([]interface{})
+	if !ok {
+		return nil // Invalid event definitions structure - skip
+	}
+
+	// Look for errorEventDefinition
+	for _, eventDef := range eventDefList {
+		eventDefMap, ok := eventDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		eventType, exists := eventDefMap["type"]
+		if !exists || eventType != "errorEventDefinition" {
+			continue // Not an error event definition
+		}
+
+		// This is an error boundary event - create subscription
+		logger.Info("Creating error boundary subscription",
+			logger.String("token_id", token.TokenID),
+			logger.String("event_id", eventID),
+			logger.String("activity_id", token.CurrentElementID))
+
+		// Extract error reference and resolve error code
+		errorCode, errorName := ste.extractErrorInfo(eventDefMap, bpmnProcess)
+
+		// Check if this boundary event is interrupting
+		cancelActivity := true // Default is interrupting
+		if cancelActivityAttr, exists := boundaryEventMap["cancel_activity"]; exists {
+			if cancelActivityBool, ok := cancelActivityAttr.(bool); ok {
+				cancelActivity = cancelActivityBool
+			} else if cancelActivityStr, ok := cancelActivityAttr.(string); ok {
+				cancelActivity = cancelActivityStr != "false"
+			}
+		}
+
+		// Get outgoing sequence flows from boundary event
+		outgoingFlows := ste.getOutgoingFlows(boundaryEventMap)
+
+		// Create error boundary subscription
+		subscription := &ErrorBoundarySubscription{
+			TokenID:        token.TokenID,
+			ElementID:      eventID,
+			AttachedToRef:  token.CurrentElementID,
+			ErrorRef:       "", // TODO: Extract from eventDefMap if needed
+			ErrorCode:      errorCode,
+			ErrorName:      errorName,
+			CancelActivity: cancelActivity,
+			OutgoingFlows:  outgoingFlows,
+		}
+
+		// Register error boundary subscription
+		ste.processComponent.RegisterErrorBoundary(subscription)
+
+		logger.Info("Error boundary subscription created",
+			logger.String("token_id", token.TokenID),
+			logger.String("event_id", eventID),
+			logger.String("error_code", errorCode),
+			logger.Bool("cancel_activity", cancelActivity))
+
+		return nil
+	}
+
+	return nil // No error event definition found
+}
+
+// extractErrorInfo extracts error code and name from error event definition
+// Извлекает код ошибки и имя из определения события ошибки
+func (ste *ServiceTaskExecutor) extractErrorInfo(eventDef map[string]interface{}, bpmnProcess interface{}) (string, string) {
+	// Get error reference from event definition
+	errorRef, exists := eventDef["reference"] // Changed from "error_ref" to "reference"
+	if !exists {
+		return "GENERAL_ERROR", "General Error"
+	}
+
+	errorRefStr, ok := errorRef.(string)
+	if !ok {
+		return "GENERAL_ERROR", "General Error"
+	}
+
+	// Get the complete BPMN structure with all elements
+	bpmnProcessMap, ok := bpmnProcess.(map[string]interface{})
+	if !ok {
+		return "GENERAL_ERROR", "General Error"
+	}
+
+	// Look for the error definition in the elements map (not error_definitions array)
+	if elements, exists := bpmnProcessMap["elements"]; exists {
+		if elementsMap, ok := elements.(map[string]interface{}); ok {
+			// Look for the specific error element by ID
+			if errorElement, exists := elementsMap[errorRefStr]; exists {
+				if errorDefMap, ok := errorElement.(map[string]interface{}); ok {
+					errorCode := "GENERAL_ERROR"
+					errorName := "General Error"
+
+					// Extract error_code from the error element
+					if code, exists := errorDefMap["error_code"]; exists {
+						if codeStr, ok := code.(string); ok {
+							errorCode = codeStr
+						}
+					}
+
+					// Extract name from the error element
+					if name, exists := errorDefMap["name"]; exists {
+						if nameStr, ok := name.(string); ok {
+							errorName = nameStr
+						}
+					}
+
+					logger.Info("Resolved error definition from elements",
+						logger.String("error_ref", errorRefStr),
+						logger.String("error_code", errorCode),
+						logger.String("error_name", errorName))
+
+					return errorCode, errorName
+				}
+			}
+		}
+	}
+
+	logger.Warn("Could not resolve error definition, using default",
+		logger.String("error_ref", errorRefStr))
+	return "GENERAL_ERROR", "General Error"
+}
+
+// getOutgoingFlows extracts outgoing sequence flows from boundary event
+// Извлекает исходящие потоки последовательности из граничного события
+func (ste *ServiceTaskExecutor) getOutgoingFlows(boundaryEvent map[string]interface{}) []string {
+	outgoing, exists := boundaryEvent["outgoing"]
+	if !exists {
+		return []string{}
+	}
+
+	var flows []string
+	if outgoingList, ok := outgoing.([]interface{}); ok {
+		for _, item := range outgoingList {
+			if flowID, ok := item.(string); ok {
+				flows = append(flows, flowID)
+			}
+		}
+	} else if outgoingStr, ok := outgoing.(string); ok {
+		flows = append(flows, outgoingStr)
+	}
+
+	return flows
 }

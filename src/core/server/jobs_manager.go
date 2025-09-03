@@ -72,17 +72,19 @@ func (c *Core) handleJobsResponse(response string) {
 		// Forward job callback to process component
 		// Передаем job callback в process component
 		if c.processComp != nil {
-			if err := c.processComp.HandleJobCallback(fullCallback.JobID, fullCallback.ElementID, fullCallback.TokenID, fullCallback.Variables); err != nil {
+			if err := c.processComp.HandleJobCallback(fullCallback.JobID, fullCallback.ElementID, fullCallback.TokenID, fullCallback.Status, fullCallback.ErrorMessage, fullCallback.Variables); err != nil {
 				logger.Error("Failed to handle job callback in process component",
 					logger.String("job_id", fullCallback.JobID),
 					logger.String("element_id", fullCallback.ElementID),
 					logger.String("token_id", fullCallback.TokenID),
+					logger.String("status", fullCallback.Status),
 					logger.String("error", err.Error()))
 			} else {
 				logger.Info("Job callback processed successfully",
 					logger.String("job_id", fullCallback.JobID),
 					logger.String("element_id", fullCallback.ElementID),
-					logger.String("token_id", fullCallback.TokenID))
+					logger.String("token_id", fullCallback.TokenID),
+					logger.String("status", fullCallback.Status))
 			}
 		}
 	}

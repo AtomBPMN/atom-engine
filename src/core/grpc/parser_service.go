@@ -117,7 +117,7 @@ func (s *ParserService) ParseBPMNFile(ctx context.Context, req *parserpb.ParseBP
 		}
 		if elementsCount, ok := resultData["elements_count"].(float64); ok {
 			response.TotalElements = int32(elementsCount)
-			response.SuccessfulElements = int32(elementsCount) // Assume all successful for now
+			response.SuccessfulElements = int32(elementsCount) // Parser only saves successfully parsed elements
 		}
 	}
 
@@ -230,6 +230,9 @@ func (s *ParserService) GetBPMNProcess(ctx context.Context, req *parserpb.GetBPM
 
 	// Element counts populated from process data
 	// Счетчики элементов заполняются из данных процесса
+	for elementType, count := range processInfo.ElementCounts {
+		details.ElementCounts[elementType] = int32(count)
+	}
 
 	return &parserpb.GetBPMNProcessResponse{
 		Success: true,
@@ -307,25 +310,31 @@ func (s *ParserService) GetBPMNStats(ctx context.Context, req *parserpb.GetBPMNS
 		}, status.Error(codes.Internal, err.Error())
 	}
 
+	// Get active processes count from status counts
+	// Получаем количество активных процессов из счетчиков статусов
+	activeProcesses := int32(0)
+	if activeCount, exists := stats.StatusCounts["active"]; exists {
+		activeProcesses = int32(activeCount)
+	}
+
 	response := &parserpb.GetBPMNStatsResponse{
 		Success:             true,
 		Message:             "Successfully retrieved BPMN statistics",
 		TotalProcesses:      int32(stats.TotalProcesses),
-		ActiveProcesses:     int32(stats.TotalProcesses), // Same as total for now
+		ActiveProcesses:     activeProcesses,
 		TotalElementsParsed: int32(stats.TotalElements),
-		SuccessfulElements:  int32(stats.TotalElements), // Assume all successful for now
-		GenericElements:     0,
-		FailedElements:      0,
+		SuccessfulElements:  int32(stats.TotalElements), // Parser tracks only successful parsing
+		GenericElements:     0,                          // Not tracked separately
+		FailedElements:      0,                          // Failed processes are not saved to storage
 		ElementTypeCounts:   make(map[string]int32),
 		LastParsedAt:        time.Now().Format(time.RFC3339),
 	}
 
-	// Add element type counts if available
-	// Добавляем счетчики типов элементов если доступны
-	response.ElementTypeCounts["startEvent"] = 1
-	response.ElementTypeCounts["endEvent"] = 1
-	response.ElementTypeCounts["serviceTask"] = 3
-	response.ElementTypeCounts["sequenceFlow"] = 5
+	// Add real element type counts from parser statistics
+	// Добавляем реальные счетчики типов элементов из статистики парсера
+	for elementType, count := range stats.ElementCounts {
+		response.ElementTypeCounts[elementType] = int32(count)
+	}
 
 	return response, nil
 }

@@ -27,6 +27,7 @@ type CoreInterface interface {
 	GetJobsComponent() interface{}               // Returns JobsComponentInterface
 	GetMessagesComponent() interface{}           // Returns MessagesComponentInterface
 	GetExpressionComponent() interface{}         // Returns ExpressionComponentInterface
+	GetIncidentsComponent() interface{}          // Returns IncidentsComponentInterface
 }
 
 // ComponentInterface defines process component interface (legacy compatibility)
@@ -58,7 +59,7 @@ type ComponentInterface interface {
 	CancelBoundaryTimersForToken(tokenID string) error
 
 	// Job management
-	HandleJobCallback(jobID, elementID, tokenID string, variables map[string]interface{}) error
+	HandleJobCallback(jobID, elementID, tokenID, status, errorMessage string, variables map[string]interface{}) error
 
 	// Message management
 	HandleMessageCallback(messageID, messageName, correlationKey, tokenID string, variables map[string]interface{}) error
@@ -71,6 +72,12 @@ type ComponentInterface interface {
 
 	// Helper methods
 	GetBPMNProcessForToken(token *models.Token) (map[string]interface{}, error)
+
+	// Error boundary management
+	RegisterErrorBoundary(subscription *ErrorBoundarySubscription)
+	GetErrorBoundariesForToken(tokenID string) []*ErrorBoundarySubscription
+	FindMatchingErrorBoundary(tokenID, errorCode string) *ErrorBoundarySubscription
+	RemoveErrorBoundariesForToken(tokenID string)
 
 	// Legacy compatibility (will be removed in future)
 	GetJobsComponent() interface{}
@@ -136,6 +143,9 @@ type Component struct {
 	bpmnHelper *BPMNHelper
 	core       CoreInterface
 
+	// Error boundary management
+	errorBoundaryRegistry *ErrorBoundaryRegistry
+
 	// Component state
 	ready  bool
 	ctx    context.Context
@@ -159,6 +169,9 @@ func NewComponent(storage storage.Storage) *Component {
 	comp.timerManager = NewUnifiedTimerManager(storage, comp)
 	comp.jobManager = NewJobCallbacks(storage, comp)
 	comp.messageManager = NewUnifiedMessageManager(storage, comp)
+
+	// Initialize error boundary management
+	comp.errorBoundaryRegistry = NewErrorBoundaryRegistry()
 
 	// Initialize core components
 	comp.bpmnHelper = NewBPMNHelper(storage)
@@ -389,8 +402,8 @@ func (c *Component) GetBPMNProcessForToken(token *models.Token) (map[string]inte
 // JobCallbackManagerInterface delegation
 // Делегирование JobCallbackManagerInterface
 
-func (c *Component) HandleJobCallback(jobID, elementID, tokenID string, variables map[string]interface{}) error {
-	return c.jobManager.HandleJobCallback(jobID, elementID, tokenID, variables)
+func (c *Component) HandleJobCallback(jobID, elementID, tokenID, status, errorMessage string, variables map[string]interface{}) error {
+	return c.jobManager.HandleJobCallback(jobID, elementID, tokenID, status, errorMessage, variables)
 }
 
 // MessageCallbackManagerInterface delegation
@@ -469,4 +482,23 @@ func main() {
 
 	responseJSON, _ := json.Marshal(response)
 	fmt.Println(string(responseJSON))
+}
+
+// ErrorBoundaryRegistry delegation
+// Делегирование ErrorBoundaryRegistry
+
+func (c *Component) RegisterErrorBoundary(subscription *ErrorBoundarySubscription) {
+	c.errorBoundaryRegistry.RegisterErrorBoundary(subscription)
+}
+
+func (c *Component) GetErrorBoundariesForToken(tokenID string) []*ErrorBoundarySubscription {
+	return c.errorBoundaryRegistry.GetErrorBoundariesForToken(tokenID)
+}
+
+func (c *Component) FindMatchingErrorBoundary(tokenID, errorCode string) *ErrorBoundarySubscription {
+	return c.errorBoundaryRegistry.FindMatchingErrorBoundary(tokenID, errorCode)
+}
+
+func (c *Component) RemoveErrorBoundariesForToken(tokenID string) {
+	c.errorBoundaryRegistry.RemoveErrorBoundariesForToken(tokenID)
 }

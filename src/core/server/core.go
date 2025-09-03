@@ -18,6 +18,7 @@ import (
 	"atom-engine/src/core/grpc"
 	"atom-engine/src/core/models"
 	"atom-engine/src/expression"
+	"atom-engine/src/incidents"
 	"atom-engine/src/jobs"
 	"atom-engine/src/messages"
 	"atom-engine/src/parser"
@@ -39,6 +40,7 @@ type Core struct {
 	jobsComp       *jobs.Component
 	messagesComp   *messages.Component
 	expressionComp *expression.Component
+	incidentsComp  *incidents.Component
 	loggerReady    bool
 	mu             sync.RWMutex
 	running        bool
@@ -92,6 +94,10 @@ func NewCoreWithConfig(cfg *config.Config) (*Core, error) {
 	// Инициализируем expression компонент
 	expressionComp := expression.NewComponent()
 
+	// Initialize incidents component with storage
+	// Инициализируем incidents компонент с storage
+	incidentsComp := incidents.NewComponent(cfg, storageInstance)
+
 	return &Core{
 		config:        cfg,
 		storage:       storageInstance,
@@ -102,6 +108,7 @@ func NewCoreWithConfig(cfg *config.Config) (*Core, error) {
 		jobsComp:       jobsComp,
 		messagesComp:   messagesComp,
 		expressionComp: expressionComp,
+		incidentsComp:  incidentsComp,
 		loggerReady:    false,
 		running:        false,
 	}, nil
@@ -120,6 +127,11 @@ func (c *Core) GetJobsComponent() interface{} {
 // GetExpressionComponent returns expression component
 func (c *Core) GetExpressionComponent() interface{} {
 	return c.expressionComp
+}
+
+// GetIncidentsComponent returns incidents component
+func (c *Core) GetIncidentsComponent() interface{} {
+	return c.incidentsComp
 }
 
 // GetParserComponent returns parser component
@@ -172,6 +184,8 @@ func (c *Core) getComponentByName(componentName string) interface{} {
 		return c.timewheelComp
 	case "expression":
 		return c.expressionComp
+	case "incidents":
+		return c.incidentsComp
 	case "storage":
 		return c.storage
 	default:
@@ -239,5 +253,39 @@ func (c *Core) WaitForMessagesResponse(timeoutMs int) (string, error) {
 		return response, nil
 	case <-time.After(timeout):
 		return "", fmt.Errorf("timeout waiting for messages response after %dms", timeoutMs)
+	}
+}
+
+// WaitForIncidentsResponse waits for incidents response with timeout
+// Ожидает ответ от incidents компонента с таймаутом
+func (c *Core) WaitForIncidentsResponse(timeoutMs int) (string, error) {
+	if c.incidentsComp == nil {
+		return "", fmt.Errorf("incidents component not available")
+	}
+
+	responseChannel := c.incidentsComp.GetResponseChannel()
+	if responseChannel == nil {
+		return "", fmt.Errorf("incidents response channel not available")
+	}
+
+	// Clear any old responses from channel (non-blocking)
+	// Очищаем старые ответы из канала (неблокирующе)
+	for {
+		select {
+		case <-responseChannel:
+			// Discard old response
+		default:
+			// Channel is empty, proceed to wait for new response
+			goto waitForResponse
+		}
+	}
+
+waitForResponse:
+	timeout := time.Duration(timeoutMs) * time.Millisecond
+	select {
+	case response := <-responseChannel:
+		return response, nil
+	case <-time.After(timeout):
+		return "", fmt.Errorf("timeout waiting for incidents response after %dms", timeoutMs)
 	}
 }

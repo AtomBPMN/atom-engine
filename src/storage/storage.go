@@ -86,6 +86,12 @@ type Storage interface {
 	SaveMessageCorrelationResult(ctx context.Context, result *models.MessageCorrelationResult) error
 	ListMessageCorrelationResults(ctx context.Context, tenantID, messageName, processKey string, limit, offset int) ([]*models.MessageCorrelationResult, error)
 	DeleteMessageCorrelationResult(ctx context.Context, resultID string) error
+
+	// Incident persistence methods
+	// Методы персистентности инцидентов
+	SaveIncident(incident interface{}) error
+	GetIncident(incidentID string) (interface{}, error)
+	ListIncidents(filter interface{}) (interface{}, int, error)
 }
 
 // BadgerStorage implements Storage interface

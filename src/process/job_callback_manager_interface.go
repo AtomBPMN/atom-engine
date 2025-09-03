@@ -12,5 +12,5 @@ package process
 // Интерфейс менеджера job callback операций
 type JobCallbackManagerInterface interface {
 	// Job callback operations
-	HandleJobCallback(jobID, elementID, tokenID string, variables map[string]interface{}) error
+	HandleJobCallback(jobID, elementID, tokenID, status, errorMessage string, variables map[string]interface{}) error
 }

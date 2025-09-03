@@ -250,6 +250,70 @@ func (d *DaemonCommand) JobFail() error {
 	return nil
 }
 
+// JobThrowError throws error for job via gRPC  
+// Выбрасывает ошибку для работы через gRPC
+func (d *DaemonCommand) JobThrowError() error {
+	logger.Debug("Throwing error for job")
+
+	if len(os.Args) < 5 {
+		logger.Error("Invalid job throw-error arguments", logger.Int("args_count", len(os.Args)))
+		return fmt.Errorf("usage: atomd job throw-error <job_key> <error_code> [error_message]")
+	}
+
+	jobKey := os.Args[3]
+	errorCode := os.Args[4]
+	
+	var errorMessage string
+	if len(os.Args) > 5 {
+		errorMessage = os.Args[5]
+	} else {
+		errorMessage = fmt.Sprintf("BPMN Error: %s", errorCode)
+	}
+
+	logger.Info("Throwing error for job",
+		logger.String("job_key", jobKey),
+		logger.String("error_code", errorCode),
+		logger.String("error_message", errorMessage))
+
+	conn, err := d.grpcClient.Connect()
+	if err != nil {
+		logger.Error("Failed to connect to daemon for job throw-error",
+			logger.String("error", err.Error()))
+		return fmt.Errorf("daemon is not running. Start daemon first with 'atomd start': %w", err)
+	}
+	defer conn.Close()
+
+	client := jobspb.NewJobsServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := client.ThrowError(ctx, &jobspb.ThrowErrorRequest{
+		JobKey:       jobKey,
+		ErrorCode:    errorCode,
+		ErrorMessage: errorMessage,
+	})
+	if err != nil {
+		logger.Error("Failed to throw error for job", logger.String("error", err.Error()))
+		return fmt.Errorf("failed to throw error for job: %w", err)
+	}
+
+	fmt.Printf("Job Error\n")
+	fmt.Printf("=========\n")
+	fmt.Printf("Job Key: %s\n", jobKey)
+	fmt.Printf("Error Code: %s\n", errorCode)
+	fmt.Printf("Error Message: %s\n", errorMessage)
+
+	if resp.Success {
+		fmt.Printf("Status: %s\n", ColorizeOperationStatus("SUCCESS"))
+		fmt.Printf("Error thrown successfully - BPMN error boundary events will be activated\n")
+	} else {
+		fmt.Printf("Status: %s\n", ColorizeOperationStatus("FAILED"))
+		fmt.Printf("Error: %s\n", resp.ErrorMessage)
+	}
+
+	return nil
+}
+
 // JobCancel cancels a job via gRPC
 // Отменяет работу через gRPC
 func (d *DaemonCommand) JobCancel() error {

@@ -69,6 +69,8 @@ func (c *CLI) Execute() error {
 		return c.handleExpressionCommand()
 	case "bpmn":
 		return c.handleBPMNCommand()
+	case "incident":
+		return c.handleIncidentCommand()
 	case "help", "--help", "-h":
 		showHelp()
 		return nil
@@ -212,6 +214,8 @@ func (c *CLI) handleJobCommand() error {
 		return c.daemon.JobComplete()
 	case "fail":
 		return c.daemon.JobFail()
+	case "throw-error":
+		return c.daemon.JobThrowError()
 	case "cancel":
 		return c.daemon.JobCancel()
 	case "create":
@@ -323,5 +327,34 @@ func (c *CLI) handleBPMNCommand() error {
 	default:
 		logger.Error("Unknown BPMN command", logger.String("subcommand", subCommand))
 		return fmt.Errorf("unknown bpmn command: %s", subCommand)
+	}
+}
+
+// handleIncidentCommand processes incident sub-commands
+// Обрабатывает под-команды incident
+func (c *CLI) handleIncidentCommand() error {
+	if len(os.Args) < 3 {
+		showIncidentHelp()
+		return nil
+	}
+
+	subCommand := os.Args[2]
+	logger.Debug("Executing incident command", logger.String("subcommand", subCommand))
+
+	switch subCommand {
+	case "list":
+		return c.daemon.IncidentList()
+	case "show":
+		return c.daemon.IncidentShow()
+	case "resolve":
+		return c.daemon.IncidentResolve()
+	case "stats":
+		return c.daemon.IncidentStats()
+	case "help", "--help", "-h":
+		showIncidentHelp()
+		return nil
+	default:
+		logger.Error("Unknown incident command", logger.String("subcommand", subCommand))
+		return fmt.Errorf("unknown incident command: %s", subCommand)
 	}
 }

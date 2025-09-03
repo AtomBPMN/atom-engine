@@ -42,6 +42,7 @@ clean-proto:
 	rm -rf proto/*/jobspb
 	rm -rf proto/*/messagespb
 	rm -rf proto/*/expressionpb
+	rm -rf proto/*/incidentspb
 	@echo "Proto cleanup completed"
 
 # Full clean (build + proto)
@@ -71,6 +72,7 @@ proto:
 	mkdir -p proto/jobs/jobspb
 	mkdir -p proto/messages/messagespb
 	mkdir -p proto/expression/expressionpb
+	mkdir -p proto/incidents/incidentspb
 	@echo "Generating storage proto..."
 	protoc --go_out=. --go_opt=paths=source_relative \
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
@@ -106,6 +108,11 @@ proto:
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		proto/expression/expression.proto
 	mv proto/expression/*.pb.go proto/expression/expressionpb/ 2>/dev/null || true
+	@echo "Generating incidents proto..."
+	protoc --go_out=. --go_opt=paths=source_relative \
+		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+		proto/incidents/incidents.proto
+	mv proto/incidents/*.pb.go proto/incidents/incidentspb/ 2>/dev/null || true
 	@echo "Protobuf generation completed"
 
 # Show help

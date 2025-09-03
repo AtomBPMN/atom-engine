@@ -1,0 +1,184 @@
+syntax = "proto3";
+
+package incidents;
+
+option go_package = "atom-engine/proto/incidents/incidentspb";
+
+import "google/protobuf/timestamp.proto";
+
+// IncidentType enum for incident types
+enum IncidentType {
+  INCIDENT_TYPE_UNSPECIFIED = 0;
+  INCIDENT_TYPE_JOB_FAILURE = 1;
+  INCIDENT_TYPE_BPMN_ERROR = 2;
+  INCIDENT_TYPE_EXPRESSION_ERROR = 3;
+  INCIDENT_TYPE_PROCESS_ERROR = 4;
+  INCIDENT_TYPE_TIMER_ERROR = 5;
+  INCIDENT_TYPE_MESSAGE_ERROR = 6;
+  INCIDENT_TYPE_SYSTEM_ERROR = 7;
+}
+
+// IncidentStatus enum for incident status
+enum IncidentStatus {
+  INCIDENT_STATUS_UNSPECIFIED = 0;
+  INCIDENT_STATUS_OPEN = 1;
+  INCIDENT_STATUS_RESOLVED = 2;
+  INCIDENT_STATUS_DISMISSED = 3;
+}
+
+// ResolveAction enum for incident resolution actions
+enum ResolveAction {
+  RESOLVE_ACTION_UNSPECIFIED = 0;
+  RESOLVE_ACTION_RETRY = 1;
+  RESOLVE_ACTION_DISMISS = 2;
+}
+
+// Incident message representing an incident
+message Incident {
+  // Core incident fields
+  string id = 1;
+  IncidentType type = 2;
+  IncidentStatus status = 3;
+  string message = 4;
+  string error_code = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+
+  // Process context
+  string process_instance_id = 10;
+  string process_key = 11;
+  string element_id = 12;
+  string element_type = 13;
+
+  // Job context (for job-related incidents)
+  string job_key = 20;
+  string job_type = 21;
+  string worker_id = 22;
+
+  // Timer context (for timer-related incidents)
+  string timer_id = 30;
+
+  // Message context (for message-related incidents)
+  string message_name = 40;
+  string correlation_key = 41;
+
+  // Resolution fields
+  google.protobuf.Timestamp resolved_at = 50;
+  string resolved_by = 51;
+  ResolveAction resolve_action = 52;
+  string resolve_comment = 53;
+
+  // Retry context (for job failures)
+  int32 original_retries = 60;
+  int32 new_retries = 61;
+
+  // Additional metadata as key-value pairs
+  map<string, string> metadata = 70;
+}
+
+// IncidentFilter message for filtering incidents
+message IncidentFilter {
+  repeated IncidentStatus status = 1;
+  repeated IncidentType type = 2;
+  string process_instance_id = 3;
+  string process_key = 4;
+  string element_id = 5;
+  string job_key = 6;
+  string worker_id = 7;
+  google.protobuf.Timestamp created_after = 8;
+  google.protobuf.Timestamp created_before = 9;
+  int32 limit = 10;
+  int32 offset = 11;
+}
+
+// IncidentStats message for incident statistics
+message IncidentStats {
+  int32 total_incidents = 1;
+  int32 open_incidents = 2;
+  int32 resolved_incidents = 3;
+  int32 dismissed_incidents = 4;
+  map<string, int32> incidents_by_type = 5;  // String keys for enum names
+  map<string, int32> incidents_by_status = 6;  // String keys for enum names
+  int32 recent_incidents_24h = 7;
+}
+
+// Request messages
+
+message CreateIncidentRequest {
+  IncidentType type = 1;
+  string message = 2;
+  string error_code = 3;
+  string process_instance_id = 4;
+  string process_key = 5;
+  string element_id = 6;
+  string element_type = 7;
+  string job_key = 8;
+  string job_type = 9;
+  string worker_id = 10;
+  string timer_id = 11;
+  string message_name = 12;
+  string correlation_key = 13;
+  int32 original_retries = 14;
+  map<string, string> metadata = 15;
+}
+
+message ResolveIncidentRequest {
+  string incident_id = 1;
+  ResolveAction action = 2;
+  string comment = 3;
+  string resolved_by = 4;
+  int32 new_retries = 5;  // For retry action
+}
+
+message GetIncidentRequest {
+  string incident_id = 1;
+}
+
+message ListIncidentsRequest {
+  IncidentFilter filter = 1;
+}
+
+message GetIncidentStatsRequest {
+  // Empty for now, may add filters later
+}
+
+// Response messages
+
+message CreateIncidentResponse {
+  Incident incident = 1;
+}
+
+message ResolveIncidentResponse {
+  Incident incident = 1;
+}
+
+message GetIncidentResponse {
+  Incident incident = 1;
+}
+
+message ListIncidentsResponse {
+  repeated Incident incidents = 1;
+  int32 total = 2;
+}
+
+message GetIncidentStatsResponse {
+  IncidentStats stats = 1;
+}
+
+// Incidents service definition
+service IncidentsService {
+  // Create a new incident
+  rpc CreateIncident(CreateIncidentRequest) returns (CreateIncidentResponse);
+
+  // Resolve an incident
+  rpc ResolveIncident(ResolveIncidentRequest) returns (ResolveIncidentResponse);
+
+  // Get incident by ID
+  rpc GetIncident(GetIncidentRequest) returns (GetIncidentResponse);
+
+  // List incidents with filtering
+  rpc ListIncidents(ListIncidentsRequest) returns (ListIncidentsResponse);
+
+  // Get incident statistics
+  rpc GetIncidentStats(GetIncidentStatsRequest) returns (GetIncidentStatsResponse);
+}
