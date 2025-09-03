@@ -1,0 +1,130 @@
+/*
+This file is part of the AtomBPMN (R) project.
+Copyright (c) 2025 Matreska Market LLC (ООО «Matreska Market»).
+Authors: Matreska Team.
+
+This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
+*/
+
+syntax = "proto3";
+
+package messages;
+
+option go_package = "atom-engine/proto/messages/messagespb";
+
+// MessagesService provides message operations
+service MessagesService {
+  // Publish a message
+  rpc PublishMessage(PublishMessageRequest) returns (PublishMessageResponse);
+  
+  // List buffered messages
+  rpc ListBufferedMessages(ListBufferedMessagesRequest) returns (ListBufferedMessagesResponse);
+  
+  // List message subscriptions
+  rpc ListMessageSubscriptions(ListMessageSubscriptionsRequest) returns (ListMessageSubscriptionsResponse);
+  
+  // Get message statistics
+  rpc GetMessageStats(GetMessageStatsRequest) returns (GetMessageStatsResponse);
+  
+  // Cleanup expired messages
+  rpc CleanupExpiredMessages(CleanupExpiredMessagesRequest) returns (CleanupExpiredMessagesResponse);
+}
+
+// PublishMessage
+message PublishMessageRequest {
+  string tenant_id = 1;
+  string message_name = 2;
+  string correlation_key = 3;
+  map<string, string> variables = 4;
+  int64 ttl_seconds = 5;
+}
+
+message PublishMessageResponse {
+  string message_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// ListBufferedMessages
+message ListBufferedMessagesRequest {
+  string tenant_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message BufferedMessage {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string correlation_key = 4;
+  map<string, string> variables = 5;
+  int64 published_at = 6;
+  int64 buffered_at = 7;
+  int64 expires_at = 8;
+  string reason = 9;
+}
+
+message ListBufferedMessagesResponse {
+  repeated BufferedMessage messages = 1;
+  int32 total_count = 2;
+  bool success = 3;
+  string message = 4;
+}
+
+// ListMessageSubscriptions
+message ListMessageSubscriptionsRequest {
+  string tenant_id = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message MessageSubscription {
+  string id = 1;
+  string tenant_id = 2;
+  string process_definition_key = 3;
+  int32 process_version = 4;
+  string start_event_id = 5;
+  string message_name = 6;
+  string message_ref = 7;
+  string correlation_key = 8;
+  bool is_active = 9;
+  int64 created_at = 10;
+  int64 updated_at = 11;
+}
+
+message ListMessageSubscriptionsResponse {
+  repeated MessageSubscription subscriptions = 1;
+  int32 total_count = 2;
+  bool success = 3;
+  string message = 4;
+}
+
+// GetMessageStats
+message GetMessageStatsRequest {
+  string tenant_id = 1;
+}
+
+message MessageStats {
+  int32 total_messages = 1;
+  int32 buffered_messages = 2;
+  int32 expired_messages = 3;
+  int32 published_today = 4;
+  int32 instances_created_today = 5;
+}
+
+message GetMessageStatsResponse {
+  MessageStats stats = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// CleanupExpiredMessages
+message CleanupExpiredMessagesRequest {
+  string tenant_id = 1;
+}
+
+message CleanupExpiredMessagesResponse {
+  int32 cleaned_count = 1;
+  bool success = 2;
+  string message = 3;
+}

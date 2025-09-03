@@ -1,0 +1,46 @@
+/*
+This file is part of the AtomBPMN (R) project.
+Copyright (c) 2025 Matreska Market LLC (ООО «Matreska Market»).
+Authors: Matreska Team.
+
+This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
+*/
+
+syntax = "proto3";
+
+package atom.storage.v1;
+
+option go_package = "atom-engine/proto/storage/storagepb";
+
+// Storage service for database operations
+service StorageService {
+  // Get database status
+  rpc GetStorageStatus(GetStorageStatusRequest) returns (GetStorageStatusResponse);
+  
+  // Get database info (size, statistics)
+  rpc GetStorageInfo(GetStorageInfoRequest) returns (GetStorageInfoResponse);
+}
+
+// Request for storage status
+message GetStorageStatusRequest {}
+
+// Response with storage status
+message GetStorageStatusResponse {
+  bool is_connected = 1;
+  bool is_healthy = 2;
+  string status = 3;
+  int64 uptime_seconds = 4;
+}
+
+// Request for storage info
+message GetStorageInfoRequest {}
+
+// Response with storage info
+message GetStorageInfoResponse {
+  int64 total_size_bytes = 1;
+  int64 used_size_bytes = 2;
+  int64 free_size_bytes = 3;
+  int64 total_keys = 4;
+  string database_path = 5;
+  map<string, string> statistics = 6;
+}

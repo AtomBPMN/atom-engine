@@ -1,0 +1,77 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Go workspace file
+go.work
+
+# Build directory
+build/
+!build/.gitkeep
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/
+logs/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# PID files
+*.pid
+
+# Backup files
+*.backup
+*.bak
+
+# FIX directories (development backlog)
+FIX/
+
+# Proto generated files (can be regenerated)
+*pb.go
+*_pb2.py
+*_pb2_grpc.py
+
+# Vendor directory
+vendor/
+
+# Test coverage
+coverage.out
+
+bpmn_test/
+.cursor/

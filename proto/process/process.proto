@@ -1,0 +1,158 @@
+/*
+This file is part of the AtomBPMN (R) project.
+Copyright (c) 2025 Matreska Market LLC (ООО «Matreska Market»).
+Authors: Matreska Team.
+
+This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
+*/
+
+syntax = "proto3";
+
+package atom.process.v1;
+
+option go_package = "atom-engine/proto/process/processpb";
+
+// Process service for BPMN process operations
+service ProcessService {
+  // Deploy a BPMN process
+  rpc DeployProcess(DeployProcessRequest) returns (DeployProcessResponse);
+  
+  // Start a process instance
+  rpc StartProcessInstance(StartProcessInstanceRequest) returns (StartProcessInstanceResponse);
+  
+  // Get process instance status
+  rpc GetProcessInstanceStatus(GetProcessInstanceStatusRequest) returns (GetProcessInstanceStatusResponse);
+  
+  // Cancel process instance
+  rpc CancelProcessInstance(CancelProcessInstanceRequest) returns (CancelProcessInstanceResponse);
+  
+  // List process instances
+  rpc ListProcessInstances(ListProcessInstancesRequest) returns (ListProcessInstancesResponse);
+  
+  // List tokens
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse);
+  
+  // Get token details
+  rpc GetTokenStatus(GetTokenStatusRequest) returns (GetTokenStatusResponse);
+}
+
+// Request for process deployment
+message DeployProcessRequest {
+  string bpmn_content = 1;
+  string process_name = 2;
+  string version = 3;
+}
+
+// Response for process deployment
+message DeployProcessResponse {
+  string process_id = 1;
+  string version = 2;
+  bool success = 3;
+  string message = 4;
+}
+
+// Request for starting process instance
+message StartProcessInstanceRequest {
+  string process_id = 1;
+  map<string, string> variables = 2;
+}
+
+// Response for starting process instance
+message StartProcessInstanceResponse {
+  string instance_id = 1;
+  string status = 2;
+  bool success = 3;
+  string message = 4;
+}
+
+// Request for process instance status
+message GetProcessInstanceStatusRequest {
+  string instance_id = 1;
+}
+
+// Response for process instance status
+message GetProcessInstanceStatusResponse {
+  string instance_id = 1;
+  string status = 2;
+  string current_activity = 3;
+  map<string, string> variables = 4;
+  int64 started_at = 5;
+  int64 updated_at = 6;
+}
+
+// Request for canceling process instance
+message CancelProcessInstanceRequest {
+  string instance_id = 1;
+  string reason = 2;
+}
+
+// Response for canceling process instance
+message CancelProcessInstanceResponse {
+  string instance_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Request for listing process instances
+message ListProcessInstancesRequest {
+  string status_filter = 1;    // Optional status filter (ACTIVE, COMPLETED, CANCELLED)
+  int32 limit = 2;             // Optional limit for number of results
+  string process_key_filter = 3; // Optional filter by process key
+}
+
+// Response for listing process instances
+message ListProcessInstancesResponse {
+  repeated ProcessInstanceInfo instances = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Process instance information
+message ProcessInstanceInfo {
+  string instance_id = 1;
+  string process_key = 2;
+  string status = 3;
+  string current_activity = 4;
+  int64 started_at = 5;
+  int64 updated_at = 6;
+  map<string, string> variables = 7;
+}
+
+// Request for listing tokens
+message ListTokensRequest {
+  string instance_id_filter = 1;  // Optional filter by process instance ID
+  string state_filter = 2;        // Optional filter by token state (ACTIVE, COMPLETED, CANCELLED)
+  int32 limit = 3;                // Optional limit for number of results
+}
+
+// Response for listing tokens
+message ListTokensResponse {
+  repeated TokenInfo tokens = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Token information
+message TokenInfo {
+  string token_id = 1;
+  string process_instance_id = 2;
+  string process_key = 3;
+  string current_element_id = 4;
+  string state = 5;
+  string waiting_for = 6;
+  int64 created_at = 7;
+  int64 updated_at = 8;
+  map<string, string> variables = 9;
+}
+
+// Request for token status
+message GetTokenStatusRequest {
+  string token_id = 1;
+}
+
+// Response for token status
+message GetTokenStatusResponse {
+  TokenInfo token = 1;
+  bool success = 2;
+  string message = 3;
+}

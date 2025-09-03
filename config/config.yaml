@@ -1,0 +1,88 @@
+# Atom Engine Development Configuration
+# Конфигурация Atom Engine для разработки
+
+# Instance name for this deployment
+# Имя инстанса для этого развертывания
+instance_name: "atom-engine-dev"
+
+# Base path for all relative paths in configuration
+# Базовый путь для всех относительных путей в конфигурации
+base_path: "/home/user/cursor_ai/AtomBPMNProject/atom-engine/build"
+
+# Database configuration (relative to base_path)
+# Конфигурация базы данных (относительно base_path)
+database:
+  path: "data/base"
+
+# Main server configuration (legacy compatibility)
+# Конфигурация основного сервера (для совместимости)
+server:
+  host: "localhost"
+  port: 8080
+
+# gRPC server configuration
+# Конфигурация gRPC сервера
+grpc:
+  host: "localhost"
+  port: 9090
+
+# REST API server configuration
+# Конфигурация REST API сервера
+rest_api:
+  host: "localhost"
+  port: 8080
+
+# Storage configuration (relative to base_path)
+# Конфигурация хранилища (относительно base_path)
+storage:
+  directory: "data"
+  type: "badger"
+  options:
+    sync_writes: true
+    value_log_file_size: 1073741824  # 1GB
+    
+# BPMN parser configuration (relative to base_path)
+# Конфигурация BPMN парсера (относительно base_path)
+bpmn:
+  # Directory for storing original BPMN files
+  # Директория для хранения оригинальных BPMN файлов
+  path: "bpmn/"
+  
+  # Store original BPMN files alongside parsed JSON
+  # Сохранять оригинальные BPMN файлы вместе с распарсенным JSON
+  storage_original: true
+  
+  # Enable BPMN structure validation during parsing
+  # Включить валидацию структуры BPMN при парсинге
+  validation: true
+
+# Logger configuration (relative to base_path)
+# Конфигурация логирования (относительно base_path)
+logger:
+  # Log level: debug, info, warn, error, fatal
+  # Уровень логирования: debug, info, warn, error, fatal
+  level: "debug"
+  
+  # Log format: json, text
+  # Формат логов: json, text
+  format: "text"
+  
+  # Directory for log files (relative to base_path)
+  # Директория для файлов логов (относительно base_path)
+  directory: "logs"
+  
+  # Maximum size of a single log file in MB
+  # Максимальный размер одного файла лога в МБ
+  max_size: 50
+  
+  # Maximum age of log files in days
+  # Максимальный возраст файлов логов в днях
+  max_age: 7
+  
+  # Maximum number of backup log files to keep
+  # Максимальное количество файлов резервных копий логов
+  max_backups: 5
+  
+  # Enable console output alongside file logging
+  # Включить вывод в консоль наряду с записью в файл
+  enable_console: true

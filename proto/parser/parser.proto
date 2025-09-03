@@ -1,0 +1,180 @@
+/*
+This file is part of the AtomBPMN (R) project.
+Copyright (c) 2025 Matreska Market LLC (ООО «Matreska Market»).
+Authors: Matreska Team.
+
+This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
+*/
+
+syntax = "proto3";
+
+package parser;
+
+option go_package = "atom-engine/proto/parser/parserpb";
+
+// Parser service for BPMN operations
+// Сервис парсера для операций с BPMN
+service ParserService {
+  // Parse BPMN file and save to storage
+  // Парсит BPMN файл и сохраняет в хранилище
+  rpc ParseBPMNFile(ParseBPMNFileRequest) returns (ParseBPMNFileResponse);
+  
+  // List all BPMN processes
+  // Список всех BPMN процессов
+  rpc ListBPMNProcesses(ListBPMNProcessesRequest) returns (ListBPMNProcessesResponse);
+  
+  // Get BPMN process details
+  // Получить детали BPMN процесса
+  rpc GetBPMNProcess(GetBPMNProcessRequest) returns (GetBPMNProcessResponse);
+  
+  // Delete BPMN process
+  // Удалить BPMN процесс
+  rpc DeleteBPMNProcess(DeleteBPMNProcessRequest) returns (DeleteBPMNProcessResponse);
+  
+  // Get BPMN parsing statistics
+  // Получить статистику парсинга BPMN
+  rpc GetBPMNStats(GetBPMNStatsRequest) returns (GetBPMNStatsResponse);
+  
+  // Get BPMN process JSON data
+  // Получить JSON данные BPMN процесса
+  rpc GetBPMNProcessJSON(GetBPMNProcessJSONRequest) returns (GetBPMNProcessJSONResponse);
+}
+
+// Parse BPMN file request
+// Запрос парсинга BPMN файла
+message ParseBPMNFileRequest {
+  string file_path = 1;
+  string process_id = 2;
+  bool force = 3;
+}
+
+// Parse BPMN file response
+// Ответ парсинга BPMN файла
+message ParseBPMNFileResponse {
+  bool success = 1;
+  string message = 2;
+  string bpmn_id = 3;
+  string process_id = 4;
+  string process_name = 5;
+  int32 total_elements = 6;
+  int32 successful_elements = 7;
+  int32 generic_elements = 8;
+  int32 failed_elements = 9;
+  repeated ParsedElement elements = 10;
+}
+
+// Parsed element information
+// Информация о спарсенном элементе
+message ParsedElement {
+  string element_id = 1;
+  string element_type = 2;
+  string status = 3; // "success", "generic", "failed"
+  string error_message = 4;
+}
+
+// List BPMN processes request
+// Запрос списка BPMN процессов
+message ListBPMNProcessesRequest {
+  int32 limit = 1;
+}
+
+// BPMN process summary
+// Сводка по BPMN процессу
+message BPMNProcessSummary {
+  string process_key = 1;
+  string process_id = 2;
+  string process_name = 3;
+  string version = 4;
+  string status = 5;
+  int32 total_elements = 6;
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+// List BPMN processes response
+// Ответ списка BPMN процессов
+message ListBPMNProcessesResponse {
+  bool success = 1;
+  string message = 2;
+  repeated BPMNProcessSummary processes = 3;
+  int32 total_count = 4;
+}
+
+// Get BPMN process request
+// Запрос получения BPMN процесса
+message GetBPMNProcessRequest {
+  string process_key = 1;
+}
+
+// Get BPMN process response
+// Ответ получения BPMN процесса
+message GetBPMNProcessResponse {
+  bool success = 1;
+  string message = 2;
+  BPMNProcessDetails process = 3;
+}
+
+// BPMN process details
+// Детали BPMN процесса
+message BPMNProcessDetails {
+  string process_key = 1;
+  string process_id = 2;
+  string process_name = 3;
+  string version = 4;
+  int32 process_version = 5;
+  string status = 6;
+  int32 total_elements = 7;
+  string content_hash = 8;
+  string original_file = 9;
+  string created_at = 10;
+  string updated_at = 11;
+  string parsed_at = 12;
+  map<string, int32> element_counts = 13;
+}
+
+// Delete BPMN process request
+// Запрос удаления BPMN процесса
+message DeleteBPMNProcessRequest {
+  string process_id = 1;
+}
+
+// Delete BPMN process response
+// Ответ удаления BPMN процесса
+message DeleteBPMNProcessResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Get BPMN stats request
+// Запрос статистики BPMN
+message GetBPMNStatsRequest {
+}
+
+// Get BPMN stats response
+// Ответ статистики BPMN
+message GetBPMNStatsResponse {
+  bool success = 1;
+  string message = 2;
+  int32 total_processes = 3;
+  int32 active_processes = 4;
+  int32 total_elements_parsed = 5;
+  int32 successful_elements = 6;
+  int32 generic_elements = 7;
+  int32 failed_elements = 8;
+  map<string, int32> element_type_counts = 9;
+  string last_parsed_at = 10;
+}
+
+// Get BPMN process JSON request
+// Запрос JSON данных BPMN процесса
+message GetBPMNProcessJSONRequest {
+  string process_key = 1;
+}
+
+// Get BPMN process JSON response
+// Ответ JSON данных BPMN процесса
+message GetBPMNProcessJSONResponse {
+  bool success = 1;
+  string message = 2;
+  string json_data = 3;
+}

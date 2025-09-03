@@ -1,0 +1,240 @@
+/*
+This file is part of the AtomBPMN (R) project.
+Copyright (c) 2025 Matreska Market LLC (ООО «Matreska Market»).
+Authors: Matreska Team.
+
+This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
+*/
+
+syntax = "proto3";
+
+package jobs;
+
+option go_package = "atom-engine/proto/jobs/jobspb";
+
+// Jobs service for managing service task jobs
+service JobsService {
+    // Create a new job
+    rpc CreateJob(CreateJobRequest) returns (CreateJobResponse);
+    
+    // Activate jobs for worker (poll)
+    rpc ActivateJobs(ActivateJobsRequest) returns (stream ActivateJobsResponse);
+    
+    // Complete a job
+    rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse);
+    
+    // Fail a job
+    rpc FailJob(FailJobRequest) returns (FailJobResponse);
+    
+    // Throw error for job
+    rpc ThrowError(ThrowErrorRequest) returns (ThrowErrorResponse);
+    
+    // Update job retries
+    rpc UpdateJobRetries(UpdateJobRetriesRequest) returns (UpdateJobRetriesResponse);
+    
+    // Cancel job
+    rpc CancelJob(CancelJobRequest) returns (CancelJobResponse);
+    
+    // List jobs
+    rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+    
+    // Get job statistics
+    rpc GetJobStats(GetJobStatsRequest) returns (GetJobStatsResponse);
+    
+    // Get job details
+    rpc GetJob(GetJobRequest) returns (GetJobResponse);
+    
+    // Update job timeout
+    rpc UpdateJobTimeout(UpdateJobTimeoutRequest) returns (UpdateJobTimeoutResponse);
+}
+
+// Job creation request
+message CreateJobRequest {
+    string type = 1;
+    string process_instance_id = 2;
+    string element_id = 3;
+    string element_instance_id = 4;
+    map<string, string> custom_headers = 5;
+    string variables = 6; // JSON string
+    int32 retries = 7;
+    int64 timeout = 8; // milliseconds
+}
+
+message CreateJobResponse {
+    string job_key = 1;
+    bool success = 2;
+    string error_message = 3;
+}
+
+// Job activation request
+message ActivateJobsRequest {
+    string type = 1;
+    string worker = 2;
+    int32 timeout = 3; // milliseconds
+    int32 max_jobs_to_activate = 4;
+    repeated string fetch_variable = 5;
+    string tenant_ids = 6;
+}
+
+message ActivateJobsResponse {
+    repeated ActivatedJob jobs = 1;
+}
+
+message ActivatedJob {
+    string key = 1;
+    string type = 2;
+    string process_instance_key = 3;
+    string bpmn_process_id = 4;
+    int32 process_definition_version = 5;
+    string process_definition_key = 6;
+    string element_id = 7;
+    string element_instance_key = 8;
+    map<string, string> custom_headers = 9;
+    string worker = 10;
+    int32 retries = 11;
+    int64 deadline = 12; // milliseconds timestamp
+    string variables = 13; // JSON string
+    string tenant_id = 14;
+}
+
+// Job completion request
+message CompleteJobRequest {
+    string job_key = 1;
+    string variables = 2; // JSON string
+}
+
+message CompleteJobResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Job failure request
+message FailJobRequest {
+    string job_key = 1;
+    int32 retries = 2;
+    string error_message = 3;
+    int64 retry_backoff = 4; // milliseconds
+}
+
+message FailJobResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Throw error request
+message ThrowErrorRequest {
+    string job_key = 1;
+    string error_code = 2;
+    string error_message = 3;
+    string variables = 4; // JSON string
+}
+
+message ThrowErrorResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Update retries request
+message UpdateJobRetriesRequest {
+    string job_key = 1;
+    int32 retries = 2;
+}
+
+message UpdateJobRetriesResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// Cancel job request
+message CancelJobRequest {
+    string job_key = 1;
+    string reason = 2; // optional cancellation reason
+}
+
+message CancelJobResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+// List jobs request
+message ListJobsRequest {
+    string type = 1;
+    string worker = 2;
+    string process_instance_id = 3;
+    string process_key = 4;
+    string state = 5; // PENDING, ACTIVATED, COMPLETED, FAILED, CANCELED
+    int32 limit = 6;
+    int32 offset = 7;
+    string tenant_id = 8;
+    bool include_variables = 9;
+}
+
+message ListJobsResponse {
+    repeated JobInfo jobs = 1;
+    int32 total_count = 2;
+}
+
+message JobInfo {
+    string key = 1;
+    string type = 2;
+    string worker = 3;
+    int32 retries = 4;
+    int64 deadline = 5;
+    string process_instance_key = 6;
+    string element_id = 7;
+    string element_instance_key = 8;
+    int64 created_at = 9;
+    string tenant_id = 10;
+    map<string, string> custom_headers = 11;
+    map<string, string> variables = 12;
+    string status = 13;
+    string error_message = 14;
+    int32 max_retries = 15;
+    int64 lease_expiry = 16;
+}
+
+// Get job request
+message GetJobRequest {
+    string job_key = 1;
+    bool include_variables = 2;
+}
+
+message GetJobResponse {
+    JobInfo job = 1;
+    bool found = 2;
+    string error_message = 3;
+}
+
+// Update timeout request
+message UpdateJobTimeoutRequest {
+    string job_key = 1;
+    int64 timeout = 2; // milliseconds
+}
+
+message UpdateJobTimeoutResponse {
+    bool success = 1;
+    string error_message = 2;
+}
+
+
+
+// Job statistics request
+message GetJobStatsRequest {
+    // empty for now
+}
+
+// Job statistics
+message JobStats {
+    int32 total_jobs = 1;
+    int32 active_jobs = 2;
+    int32 completed_jobs = 3;
+    int32 failed_jobs = 4;
+    int32 activated_today = 5;
+    int32 completed_today = 6;
+}
+
+message GetJobStatsResponse {
+    bool success = 1;
+    string error_message = 2;
+    JobStats stats = 3;
+}
