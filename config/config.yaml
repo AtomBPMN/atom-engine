@@ -32,8 +32,44 @@ storage:
   directory: "data"
   type: "badger"
   options:
-    sync_writes: true
-    value_log_file_size: 1073741824  # 1GB
+    # Basic storage options / Базовые настройки хранилища
+    sync_writes: false  # Disable for better performance / Отключить для лучшей производительности
+    value_log_file_size: 1073741824  # 1GB value log file size / Размер файла value log в байтах
+    
+    # Performance optimization options / Настройки оптимизации производительности
+    performance:
+      # Memory settings / Настройки памяти
+      mem_table_size: 67108864           # 64MB memtable size / Размер мемтаблицы в байтах
+      num_memtables: 5                   # Number of memtables / Количество мемтаблиц
+      num_level_zero_tables: 5           # L0 tables before compaction / Количество L0 таблиц до компакции  
+      num_level_zero_tables_stall: 15    # L0 tables before stalling / Количество L0 таблиц до блокировки
+      
+      # Cache settings / Настройки кэширования
+      value_cache_size: 268435456        # 256MB value cache / Размер кэша значений в байтах
+      block_cache_size: 268435456        # 256MB block cache / Размер блочного кэша в байтах
+      index_cache_size: 134217728        # 128MB index cache / Размер кэша индексов в байтах
+      
+      # Table and file settings / Настройки таблиц и файлов
+      base_table_size: 67108864          # 64MB base table size / Базовый размер таблицы в байтах
+      max_table_size: 134217728          # 128MB max table size / Максимальный размер таблицы в байтах
+      level_size_multiplier: 10          # Level size multiplier / Множитель размера уровня
+      
+      # Compaction settings / Настройки компакции
+      num_compactors: 4                  # Number of compaction workers / Количество воркеров компакции
+      compact_l0_on_close: true          # Compact L0 on close / Компактировать L0 при закрытии
+      
+      # I/O settings / Настройки ввода-вывода
+      table_loading_mode: "memory_map"   # memory_map or file_io / Режим загрузки таблиц
+      value_log_loading_mode: "file_io"  # memory_map or file_io / Режим загрузки value log
+      
+      # Advanced performance settings / Продвинутые настройки производительности
+      bloom_false_positive: 0.01         # Bloom filter false positive rate / Вероятность ложного срабатывания Bloom фильтра
+      detect_conflicts: false            # Disable conflict detection for speed / Отключить обнаружение конфликтов
+      manage_txns: false                 # Disable transaction management / Отключить управление транзакциями
+      
+      # Batch processing / Пакетная обработка
+      max_batch_count: 128               # Maximum entries per batch / Максимум записей в батче
+      max_batch_size: 16777216           # 16MB maximum batch size / Максимальный размер батча в байтах
     
 # BPMN parser configuration (relative to base_path)
 # Конфигурация BPMN парсера (относительно base_path)

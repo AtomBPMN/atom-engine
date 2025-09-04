@@ -98,6 +98,14 @@ type Storage interface {
 	SaveIncident(incident interface{}) error
 	GetIncident(incidentID string) (interface{}, error)
 	ListIncidents(filter interface{}) (interface{}, int, error)
+
+	// Batch operations methods
+	// Методы пакетных операций
+	SaveBufferedMessagesBatch(ctx context.Context, messages []*models.BufferedMessage) error
+	SaveTokensBatch(tokens []*models.Token) error
+	DeleteMessagesBatch(ctx context.Context, messageIDs []string) error
+	CleanupExpiredMessagesBatch(ctx context.Context, batchSize int) (int, error)
+	GetBatchConfig() (maxBatchCount int, maxBatchSize int64)
 }
 
 // BadgerStorage implements Storage interface
@@ -112,7 +120,53 @@ type BadgerStorage struct {
 // Config holds database configuration
 // Конфигурация базы данных
 type Config struct {
-	Path string
+	Path    string
+	Options *StorageOptionsConfig
+}
+
+// StorageOptionsConfig holds storage options
+// Настройки опций хранилища
+type StorageOptionsConfig struct {
+	SyncWrites       *bool
+	ValueLogFileSize *int64
+	Performance      *BadgerPerformanceConfig
+}
+
+// BadgerPerformanceConfig holds BadgerDB performance settings
+// Настройки производительности BadgerDB
+type BadgerPerformanceConfig struct {
+	// Memory settings
+	MemTableSize            *int64
+	NumMemtables            *int
+	NumLevelZeroTables      *int
+	NumLevelZeroTablesStall *int
+
+	// Cache settings
+	ValueCacheSize *int64
+	BlockCacheSize *int64
+	IndexCacheSize *int64
+
+	// Table and file settings
+	BaseTableSize       *int64
+	MaxTableSize        *int64
+	LevelSizeMultiplier *int
+
+	// Compaction settings
+	NumCompactors    *int
+	CompactL0OnClose *bool
+
+	// I/O settings
+	TableLoadingMode    *string
+	ValueLogLoadingMode *string
+
+	// Advanced settings
+	BloomFalsePositive *float64
+	DetectConflicts    *bool
+	ManageTxns         *bool
+
+	// Batch processing
+	MaxBatchCount *int
+	MaxBatchSize  *int64
 }
 
 // StorageStatus represents current status

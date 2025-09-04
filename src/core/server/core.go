@@ -71,7 +71,8 @@ func NewCoreWithConfig(cfg *config.Config) (*Core, error) {
 	models.SetInstanceName(cfg.InstanceName)
 
 	storageConfig := &storage.Config{
-		Path: cfg.Database.Path,
+		Path:    cfg.Database.Path,
+		Options: convertStorageOptions(&cfg.Storage.Options),
 	}
 
 	storageInstance := storage.NewStorage(storageConfig)
@@ -214,6 +215,45 @@ func (c *Core) GetStorageInfoForREST() (*handlers.StorageInfoResponse, error) {
 		DatabasePath:   grpcInfo.DatabasePath,
 		Statistics:     grpcInfo.Statistics,
 	}, nil
+}
+
+// convertStorageOptions converts config storage options to storage package format
+// Конвертирует настройки storage из config в формат пакета storage
+func convertStorageOptions(configOptions *config.StorageOptionsConfig) *storage.StorageOptionsConfig {
+	if configOptions == nil {
+		return nil
+	}
+
+	options := &storage.StorageOptionsConfig{
+		SyncWrites:       configOptions.SyncWrites,
+		ValueLogFileSize: configOptions.ValueLogFileSize,
+	}
+
+	if configOptions.Performance != nil {
+		options.Performance = &storage.BadgerPerformanceConfig{
+			MemTableSize:            configOptions.Performance.MemTableSize,
+			NumMemtables:            configOptions.Performance.NumMemtables,
+			NumLevelZeroTables:      configOptions.Performance.NumLevelZeroTables,
+			NumLevelZeroTablesStall: configOptions.Performance.NumLevelZeroTablesStall,
+			ValueCacheSize:          configOptions.Performance.ValueCacheSize,
+			BlockCacheSize:          configOptions.Performance.BlockCacheSize,
+			IndexCacheSize:          configOptions.Performance.IndexCacheSize,
+			BaseTableSize:           configOptions.Performance.BaseTableSize,
+			MaxTableSize:            configOptions.Performance.MaxTableSize,
+			LevelSizeMultiplier:     configOptions.Performance.LevelSizeMultiplier,
+			NumCompactors:           configOptions.Performance.NumCompactors,
+			CompactL0OnClose:        configOptions.Performance.CompactL0OnClose,
+			TableLoadingMode:        configOptions.Performance.TableLoadingMode,
+			ValueLogLoadingMode:     configOptions.Performance.ValueLogLoadingMode,
+			BloomFalsePositive:      configOptions.Performance.BloomFalsePositive,
+			DetectConflicts:         configOptions.Performance.DetectConflicts,
+			ManageTxns:              configOptions.Performance.ManageTxns,
+			MaxBatchCount:           configOptions.Performance.MaxBatchCount,
+			MaxBatchSize:            configOptions.Performance.MaxBatchSize,
+		}
+	}
+
+	return options
 }
 
 // getComponentByName returns component by name

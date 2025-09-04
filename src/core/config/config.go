@@ -53,9 +53,54 @@ type RestAPIConfig struct {
 // StorageConfig holds storage configuration
 // Конфигурация хранилища
 type StorageConfig struct {
-	Directory string                 `yaml:"directory"`
-	Type      string                 `yaml:"type"` // badger, leveldb, etc
-	Options   map[string]interface{} `yaml:"options"`
+	Directory string               `yaml:"directory"`
+	Type      string               `yaml:"type"` // badger, leveldb, etc
+	Options   StorageOptionsConfig `yaml:"options"`
+}
+
+// StorageOptionsConfig holds storage options
+// Настройки опций хранилища
+type StorageOptionsConfig struct {
+	SyncWrites       *bool                    `yaml:"sync_writes,omitempty"`
+	ValueLogFileSize *int64                   `yaml:"value_log_file_size,omitempty"`
+	Performance      *BadgerPerformanceConfig `yaml:"performance,omitempty"`
+}
+
+// BadgerPerformanceConfig holds BadgerDB performance settings
+// Настройки производительности BadgerDB
+type BadgerPerformanceConfig struct {
+	// Memory settings
+	MemTableSize            *int64 `yaml:"mem_table_size,omitempty"`
+	NumMemtables            *int   `yaml:"num_memtables,omitempty"`
+	NumLevelZeroTables      *int   `yaml:"num_level_zero_tables,omitempty"`
+	NumLevelZeroTablesStall *int   `yaml:"num_level_zero_tables_stall,omitempty"`
+
+	// Cache settings
+	ValueCacheSize *int64 `yaml:"value_cache_size,omitempty"`
+	BlockCacheSize *int64 `yaml:"block_cache_size,omitempty"`
+	IndexCacheSize *int64 `yaml:"index_cache_size,omitempty"`
+
+	// Table and file settings
+	BaseTableSize       *int64 `yaml:"base_table_size,omitempty"`
+	MaxTableSize        *int64 `yaml:"max_table_size,omitempty"`
+	LevelSizeMultiplier *int   `yaml:"level_size_multiplier,omitempty"`
+
+	// Compaction settings
+	NumCompactors    *int  `yaml:"num_compactors,omitempty"`
+	CompactL0OnClose *bool `yaml:"compact_l0_on_close,omitempty"`
+
+	// I/O settings
+	TableLoadingMode    *string `yaml:"table_loading_mode,omitempty"`
+	ValueLogLoadingMode *string `yaml:"value_log_loading_mode,omitempty"`
+
+	// Advanced settings
+	BloomFalsePositive *float64 `yaml:"bloom_false_positive,omitempty"`
+	DetectConflicts    *bool    `yaml:"detect_conflicts,omitempty"`
+	ManageTxns         *bool    `yaml:"manage_txns,omitempty"`
+
+	// Batch processing
+	MaxBatchCount *int   `yaml:"max_batch_count,omitempty"`
+	MaxBatchSize  *int64 `yaml:"max_batch_size,omitempty"`
 }
 
 // LoggerConfig holds logger configuration

@@ -196,7 +196,7 @@ func (bs *BadgerStorage) GetBufferedMessage(ctx context.Context, messageID strin
 	return message, nil
 }
 
-// ListBufferedMessages lists buffered messages
+// ListBufferedMessages lists buffered messages with performance optimizations
 func (bs *BadgerStorage) ListBufferedMessages(ctx context.Context, tenantID string, limit, offset int) ([]*models.BufferedMessage, error) {
 	if bs.db == nil {
 		return nil, fmt.Errorf("database not initialized")
@@ -205,40 +205,60 @@ func (bs *BadgerStorage) ListBufferedMessages(ctx context.Context, tenantID stri
 	var messages []*models.BufferedMessage
 	prefix := []byte("buf_msg:")
 
+	// Calculate optimal prefetch size based on batch configuration
+	maxBatchCount, _ := bs.GetBatchConfig()
+	prefetchSize := maxBatchCount
+	if limit > 0 && limit < prefetchSize {
+		prefetchSize = limit * 2 // Prefetch a bit more than needed
+	}
+
 	err := bs.db.View(func(txn *badger.Txn) error {
 		opts := badger.DefaultIteratorOptions
-		opts.PrefetchSize = 10
+		opts.PrefetchSize = prefetchSize
+		opts.PrefetchValues = true // Prefetch values for better performance
 		it := txn.NewIterator(opts)
 		defer it.Close()
 
 		count := 0
 		skipped := 0
+
+		// Pre-allocate slice for better memory performance
+		if limit > 0 {
+			messages = make([]*models.BufferedMessage, 0, limit)
+		} else {
+			messages = make([]*models.BufferedMessage, 0, 100) // Default capacity
+		}
+
 		for it.Seek(prefix); it.ValidForPrefix(prefix) && (limit <= 0 || count < limit); it.Next() {
 			item := it.Item()
+
+			var data []byte
 			err := item.Value(func(val []byte) error {
-				var msg models.BufferedMessage
-				if err := json.Unmarshal(val, &msg); err != nil {
-					return err
-				}
-
-				// Filter by tenant if specified
-				if tenantID != "" && msg.TenantID != tenantID {
-					return nil
-				}
-
-				// Apply offset
-				if skipped < offset {
-					skipped++
-					return nil
-				}
-
-				messages = append(messages, &msg)
-				count++
+				data = append([]byte(nil), val...) // Copy value for safety
 				return nil
 			})
 			if err != nil {
-				return err
+				continue // Skip corrupted entries
 			}
+
+			var msg models.BufferedMessage
+			if err := json.Unmarshal(data, &msg); err != nil {
+				continue // Skip corrupted entries
+			}
+
+			// Filter by tenant if specified (early filtering for performance)
+			if tenantID != "" && msg.TenantID != tenantID {
+				continue
+			}
+
+			// Apply offset
+			if skipped < offset {
+				skipped++
+				continue
+			}
+
+			messages = append(messages, &msg)
+			count++
 		}
 		return nil
 	})

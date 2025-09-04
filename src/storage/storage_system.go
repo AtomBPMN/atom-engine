@@ -49,21 +49,8 @@ func (s *BadgerStorage) LogSystemEvent(eventType, status, message string) error 
 		return fmt.Errorf("failed to log system event: %w", err)
 	}
 
-	// Force sync to disk
-	err = s.db.Sync()
-	if err != nil {
-		return fmt.Errorf("failed to sync database: %w", err)
-	}
-
-	// Verify the event was written
-	err = s.db.View(func(txn *badger.Txn) error {
-		_, err := txn.Get([]byte(key))
-		return err
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to verify event was written: %w", err)
-	}
+	// Note: Removed forced sync for better performance
+	// BadgerDB handles sync according to SyncWrites configuration
 
 	logger.Debug("System event logged to DB",
 		logger.String("event_type", eventType),
