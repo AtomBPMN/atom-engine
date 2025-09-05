@@ -95,9 +95,21 @@ func (ch *CallbackHelper) ProcessCallbackAndContinue(token *models.Token, elemen
 	}
 
 	// Move token to next elements using existing logic
+	logger.Info("DEBUG: About to move token to next elements",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", elementID))
+
 	if err := ch.tokenMovement.MoveTokenToNextElements(token, elementID); err != nil {
+		logger.Error("DEBUG: Failed to move token to next elements",
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", elementID),
+			logger.String("error", err.Error()))
 		return fmt.Errorf("failed to move token to next elements: %w", err)
 	}
+
+	logger.Info("DEBUG: Successfully moved token to next elements",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", elementID))
 
 	logger.Info("Callback processed successfully - token execution continued",
 		logger.String("element_id", elementID),

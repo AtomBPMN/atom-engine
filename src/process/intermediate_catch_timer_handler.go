@@ -55,6 +55,11 @@ func (icth *IntermediateCatchTimerHandler) HandleTimerEvent(token *models.Token,
 			}
 		}
 
+		logger.Info("DEBUG: Timer event handler creating execution result",
+			logger.String("element_id", token.CurrentElementID),
+			logger.Int("next_elements_count", len(nextElements)),
+			logger.Any("next_elements", nextElements))
+
 		return &ExecutionResult{
 			Success:      true,
 			TokenUpdated: true,
@@ -240,7 +245,7 @@ func (icth *IntermediateCatchTimerHandler) evaluateTimerExpression(expression st
 	type ExpressionEvaluator interface {
 		EvaluateExpressionEngine(expression interface{}, variables map[string]interface{}) (interface{}, error)
 	}
-	
+
 	expressionComp, ok := expressionCompInterface.(ExpressionEvaluator)
 	if !ok {
 		return nil, fmt.Errorf("failed to cast expression component to ExpressionEvaluator interface")

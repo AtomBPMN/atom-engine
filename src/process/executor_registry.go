@@ -67,6 +67,12 @@ func (er *ExecutorRegistry) registerExecutors() {
 	er.RegisterExecutor(&ScriptTaskExecutor{})
 	logger.Info("Registering CallActivityExecutor with process component", logger.Bool("hasComponentInterface", er.component != nil))
 	er.RegisterExecutor(NewCallActivityExecutor(er.component))
+
+	// Register Send Task and Receive Task executors
+	logger.Info("Registering SendTaskExecutor with process component", logger.Bool("hasComponentInterface", er.component != nil))
+	er.RegisterExecutor(NewSendTaskExecutor(er.component))
+	logger.Info("Registering ReceiveTaskExecutor with process component", logger.Bool("hasComponentInterface", er.component != nil))
+	er.RegisterExecutor(NewReceiveTaskExecutor(er.component))
 }
 
 // RegisterExecutor registers element executor

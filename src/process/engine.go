@@ -85,6 +85,10 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 		logger.String("token_state", string(token.State)),
 		logger.String("process_instance_id", token.ProcessInstanceID))
 
+	logger.Info("DEBUG: ExecuteToken called",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
 	// Load process definition
 	logger.Info("Loading process definition",
 		logger.String("token_id", token.TokenID),
@@ -154,6 +158,12 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 	elementMap, ok := element.(map[string]interface{})
 	if ok {
 		elementType, typeExists := elementMap["type"].(string)
+
+		logger.Info("DEBUG: Element type determined",
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("element_type", elementType),
+			logger.Bool("type_exists", typeExists))
+
 		if typeExists && elementType == "sequenceFlow" {
 			// Handle sequence flow directly by getting target_ref
 			// Обрабатываем sequence flow напрямую получая target_ref
@@ -198,10 +208,19 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 	if elementType == "serviceTask" {
 		executor, executorExists = e.executorRegistry.GetServiceTaskExecutor(elementMap)
 	} else {
+		logger.Info("DEBUG: Looking for executor",
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("element_type", elementType))
 		executor, executorExists = e.executorRegistry.GetExecutor(elementType)
+		logger.Info("DEBUG: Executor lookup result",
+			logger.String("element_type", elementType),
+			logger.Bool("executor_exists", executorExists))
 	}
 
 	if !executorExists {
+		logger.Error("DEBUG: No executor found",
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("element_type", elementType))
 		return fmt.Errorf("no executor found for element type: %s", elementType)
 	}
 
@@ -310,6 +329,11 @@ func (e *Engine) HandleMessageCallback(messageID, messageName, correlationKey, t
 		logger.String("token_id", tokenID),
 		logger.String("message_name", messageName))
 
+	logger.Info("DEBUG: Token ProcessKey before message callback",
+		logger.String("token_id", tokenID),
+		logger.String("token_process_key", token.ProcessKey),
+		logger.String("token_process_instance_id", token.ProcessInstanceID))
+
 	// Clear waiting state and merge message variables
 	// Очищаем состояние ожидания и объединяем переменные сообщения
 	token.ClearWaitingFor()
@@ -325,7 +349,7 @@ func (e *Engine) HandleMessageCallback(messageID, messageName, correlationKey, t
 	if token.Variables == nil {
 		token.Variables = make(map[string]interface{})
 	}
-	token.Variables["_message_correlated"] = true
+	token.Variables["_correlatedBy"] = "message"
 
 	// Continue token execution from current element
 	// Продолжаем выполнение токена с текущего элемента

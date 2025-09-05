@@ -125,6 +125,12 @@ func (p *TaskParser) Parse(element *XMLElement, context *ParseContext) (map[stri
 	case "serviceTask":
 		service := p.parseServiceTask(element)
 		result["service"] = service
+	case "sendTask":
+		send := p.parseSendTask(element)
+		result["send_task"] = send
+	case "receiveTask":
+		receive := p.parseReceiveTask(element)
+		result["receive_task"] = receive
 	case "userTask":
 		user := p.parseUserTask(element)
 		result["user_task"] = user
@@ -197,6 +203,70 @@ func (p *TaskParser) parseUserTask(element *XMLElement) map[string]interface{} {
 	}
 
 	return user
+}
+
+// parseSendTask parses send task specific elements
+// Парсинг специфичных элементов задачи отправки
+func (p *TaskParser) parseSendTask(element *XMLElement) map[string]interface{} {
+	send := make(map[string]interface{})
+
+	// Parse direct attributes
+	// Парсинг прямых атрибутов
+	for _, attr := range element.Attributes {
+		switch attr.Name.Local {
+		case "messageRef":
+			send["message_ref"] = attr.Value
+		case "operationRef":
+			send["operation_ref"] = attr.Value
+		case "implementation":
+			send["implementation"] = attr.Value
+		}
+	}
+
+	// Extract task type from extension elements taskDefinition
+	// Извлечение типа задачи из taskDefinition в элементах расширения
+	for _, child := range element.Children {
+		if child.XMLName.Local == "extensionElements" {
+			for _, extChild := range child.Children {
+				if extChild.XMLName.Local == "taskDefinition" {
+					for _, attr := range extChild.Attributes {
+						if attr.Name.Local == "type" {
+							send["task_type"] = attr.Value
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return send
+}
+
+// parseReceiveTask parses receive task specific elements
+// Парсинг специфичных элементов задачи получения
+func (p *TaskParser) parseReceiveTask(element *XMLElement) map[string]interface{} {
+	receive := make(map[string]interface{})
+
+	// Parse direct attributes
+	// Парсинг прямых атрибутов
+	for _, attr := range element.Attributes {
+		switch attr.Name.Local {
+		case "messageRef":
+			receive["message_ref"] = attr.Value
+		case "operationRef":
+			receive["operation_ref"] = attr.Value
+		case "implementation":
+			receive["implementation"] = attr.Value
+		case "instantiate":
+			if instantiate, err := strconv.ParseBool(attr.Value); err == nil {
+				receive["instantiate"] = instantiate
+			} else {
+				receive["instantiate"] = attr.Value
+			}
+		}
+	}
+
+	return receive
 }
 
 // parseCallActivity parses call activity specific elements
