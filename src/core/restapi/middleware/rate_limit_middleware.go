@@ -11,6 +11,7 @@ package middleware
 import (
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -42,10 +43,19 @@ func DefaultRateLimitConfig() *RateLimitConfig {
 	}
 }
 
+// clientInfo holds information about client requests
+type clientInfo struct {
+	requests  []time.Time
+	lastReset time.Time
+	mutex     sync.Mutex
+}
+
 // RateLimitMiddleware provides HTTP rate limiting
 type RateLimitMiddleware struct {
 	config        *RateLimitConfig
 	authComponent auth.Component
+	clients       map[string]*clientInfo
+	clientsMutex  sync.RWMutex
 }
 
 // NewRateLimitMiddleware creates new rate limit middleware
@@ -57,6 +67,7 @@ func NewRateLimitMiddleware(config *RateLimitConfig, authComponent auth.Componen
 	return &RateLimitMiddleware{
 		config:        config,
 		authComponent: authComponent,
+		clients:       make(map[string]*clientInfo),
 	}
 }
 
@@ -146,14 +157,57 @@ func (rlm *RateLimitMiddleware) checkAuthRateLimit(c *gin.Context, clientID stri
 
 // checkBuiltinRateLimit checks rate limit using built-in limiter
 func (rlm *RateLimitMiddleware) checkBuiltinRateLimit(c *gin.Context, clientID string) bool {
-	// Simple built-in rate limiting implementation
-	// In production, you might want to use a more sophisticated algorithm like token bucket
-	// For now, we'll just log and allow the request
-
-	logger.Debug("Built-in rate limiting not implemented, allowing request",
+	now := time.Now()
+	
+	// Get or create client info
+	rlm.clientsMutex.RLock()
+	client, exists := rlm.clients[clientID]
+	rlm.clientsMutex.RUnlock()
+	
+	if !exists {
+		// Create new client info
+		client = &clientInfo{
+			requests:  make([]time.Time, 0),
+			lastReset: now,
+		}
+		rlm.clientsMutex.Lock()
+		rlm.clients[clientID] = client
+		rlm.clientsMutex.Unlock()
+	}
+	
+	// Lock client for update
+	client.mutex.Lock()
+	defer client.mutex.Unlock()
+	
+	// Clean old requests (sliding window)
+	cutoff := now.Add(-rlm.config.WindowSize)
+	validRequests := make([]time.Time, 0)
+	for _, reqTime := range client.requests {
+		if reqTime.After(cutoff) {
+			validRequests = append(validRequests, reqTime)
+		}
+	}
+	client.requests = validRequests
+	
+	// Check if limit exceeded
+	if len(client.requests) >= rlm.config.RequestsPerMinute {
+		logger.Warn("Rate limit exceeded",
+			logger.String("client_id", clientID),
+			logger.String("path", c.Request.URL.Path),
+			logger.Int("requests_count", len(client.requests)),
+			logger.Int("limit", rlm.config.RequestsPerMinute))
+		return false
+	}
+	
+	// Record this request
+	client.requests = append(client.requests, now)
+	
+	logger.Debug("Rate limit check passed",
 		logger.String("client_id", clientID),
-		logger.String("path", c.Request.URL.Path))
-
+		logger.String("path", c.Request.URL.Path),
+		logger.Int("requests_count", len(client.requests)),
+		logger.Int("limit", rlm.config.RequestsPerMinute))
+	
 	return true
 }
 
@@ -162,19 +216,41 @@ func (rlm *RateLimitMiddleware) addRateLimitHeaders(c *gin.Context, clientID str
 	// Add standard rate limit headers
 	c.Header("X-RateLimit-Limit", strconv.Itoa(rlm.config.RequestsPerMinute))
 
-	if rlm.config.UseAuthRateLimiter && rlm.authComponent != nil {
-		// Get remaining requests from auth component if available
-		if rateLimiter := rlm.authComponent.GetRateLimiter(); rateLimiter != nil {
-			// This would require extending the RateLimiter interface
-			// For now, we'll use a placeholder
-			c.Header("X-RateLimit-Remaining", "unknown")
-			c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(rlm.config.WindowSize).Unix(), 10))
+	// Calculate remaining requests for built-in limiter
+	remaining := rlm.config.RequestsPerMinute
+	resetTime := time.Now().Add(rlm.config.WindowSize)
+
+	if !rlm.config.UseAuthRateLimiter {
+		// Get current request count for built-in limiter
+		rlm.clientsMutex.RLock()
+		if client, exists := rlm.clients[clientID]; exists {
+			client.mutex.Lock()
+			// Clean old requests for accurate count
+			now := time.Now()
+			cutoff := now.Add(-rlm.config.WindowSize)
+			validCount := 0
+			for _, reqTime := range client.requests {
+				if reqTime.After(cutoff) {
+					validCount++
+				}
+			}
+			remaining = rlm.config.RequestsPerMinute - validCount
+			if remaining < 0 {
+				remaining = 0
+			}
+			client.mutex.Unlock()
 		}
-	} else {
-		// Default headers
-		c.Header("X-RateLimit-Remaining", "unknown")
-		c.Header("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(rlm.config.WindowSize).Unix(), 10))
+		rlm.clientsMutex.RUnlock()
+	} else if rlm.authComponent != nil {
+		// Try to get info from auth component if available
+		if rateLimiter := rlm.authComponent.GetRateLimiter(); rateLimiter != nil {
+			// This would require extending the RateLimiter interface for detailed info
+			// For now, keep default calculation
+		}
 	}
+
+	c.Header("X-RateLimit-Remaining", strconv.Itoa(remaining))
+	c.Header("X-RateLimit-Reset", strconv.FormatInt(resetTime.Unix(), 10))
 }
 
 // getClientIdentifier extracts client identifier for rate limiting
@@ -283,4 +359,45 @@ func (rlm *RateLimitMiddleware) GetRateLimitInfo(clientID string) *RateLimitInfo
 	}
 
 	return info
+}
+
+// CleanupOldClients removes inactive clients to prevent memory leaks
+func (rlm *RateLimitMiddleware) CleanupOldClients() {
+	now := time.Now()
+	cleanupCutoff := now.Add(-rlm.config.WindowSize * 2) // Clean clients with no activity for 2 windows
+	
+	rlm.clientsMutex.Lock()
+	defer rlm.clientsMutex.Unlock()
+	
+	for clientID, client := range rlm.clients {
+		client.mutex.Lock()
+		// Check if client has any recent activity
+		hasRecentActivity := false
+		for _, reqTime := range client.requests {
+			if reqTime.After(cleanupCutoff) {
+				hasRecentActivity = true
+				break
+			}
+		}
+		client.mutex.Unlock()
+		
+		// Remove client if no recent activity
+		if !hasRecentActivity {
+			delete(rlm.clients, clientID)
+			logger.Debug("Cleaned up inactive rate limit client",
+				logger.String("client_id", clientID))
+		}
+	}
+}
+
+// StartCleanupWorker starts a background worker to clean up old clients
+func (rlm *RateLimitMiddleware) StartCleanupWorker() {
+	go func() {
+		ticker := time.NewTicker(rlm.config.WindowSize)
+		defer ticker.Stop()
+		
+		for range ticker.C {
+			rlm.CleanupOldClients()
+		}
+	}()
 }

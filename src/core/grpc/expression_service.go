@@ -12,6 +12,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"atom-engine/proto/expression/expressionpb"
 	"atom-engine/src/core/logger"
@@ -418,9 +420,79 @@ func countFailedTests(results []*expressionpb.TestResult) int {
 // Other methods with stub implementations for now
 
 func (s *expressionServiceServer) EvaluateBatch(ctx context.Context, req *expressionpb.EvaluateBatchRequest) (*expressionpb.EvaluateBatchResponse, error) {
+	logger.Info("EvaluateBatch gRPC request",
+		logger.Int("expressions_count", len(req.Expressions)),
+		logger.String("tenant_id", req.TenantId))
+
+	// Get expression component from core
+	expressionComp, err := getExpressionComponent(s.core)
+	if err != nil {
+		return &expressionpb.EvaluateBatchResponse{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// Parse context variables from JSON
+	variables := make(map[string]interface{})
+	if req.Context != "" {
+		if err := json.Unmarshal([]byte(req.Context), &variables); err != nil {
+			logger.Error("Failed to parse context JSON", logger.String("error", err.Error()))
+			return &expressionpb.EvaluateBatchResponse{
+				Success:      false,
+				ErrorMessage: "Invalid context JSON: " + err.Error(),
+			}, nil
+		}
+	}
+
+	// Evaluate each expression
+	results := make([]*expressionpb.ExpressionResult, 0, len(req.Expressions))
+	allSuccessful := true
+
+	for _, exprItem := range req.Expressions {
+		result, err := expressionComp.EvaluateExpression(exprItem.Expression, variables)
+		var resultJSON string
+		var resultType string
+		var errorMessage string
+		success := true
+
+		if err != nil {
+			success = false
+			allSuccessful = false
+			errorMessage = err.Error()
+			resultJSON = "null"
+			resultType = "error"
+		} else {
+			// Convert result to JSON string
+			resultBytes, err := json.Marshal(result)
+			if err != nil {
+				success = false
+				allSuccessful = false
+				errorMessage = "Failed to serialize result: " + err.Error()
+				resultJSON = "null"
+				resultType = "error"
+			} else {
+				resultJSON = string(resultBytes)
+				resultType = getResultType(result)
+			}
+		}
+
+		results = append(results, &expressionpb.ExpressionResult{
+			Id:           exprItem.Id,
+			Result:       resultJSON,
+			Success:      success,
+			ErrorMessage: errorMessage,
+			ResultType:   resultType,
+		})
+	}
+
+	logger.Info("EvaluateBatch completed",
+		logger.Int("total_expressions", len(req.Expressions)),
+		logger.Bool("all_successful", allSuccessful))
+
 	return &expressionpb.EvaluateBatchResponse{
-		Success:      false,
-		ErrorMessage: "batch evaluation not implemented yet",
+		Results: results,
+		Success: allSuccessful,
 	}, nil
 }
 
@@ -461,8 +533,99 @@ func (s *expressionServiceServer) EvaluateCondition(ctx context.Context, req *ex
 }
 
 func (s *expressionServiceServer) ExtractVariables(ctx context.Context, req *expressionpb.ExtractVariablesRequest) (*expressionpb.ExtractVariablesResponse, error) {
+	logger.Info("ExtractVariables gRPC request",
+		logger.String("expression", req.Expression))
+
+	if req.Expression == "" {
+		return &expressionpb.ExtractVariablesResponse{
+			Success:      false,
+			ErrorMessage: "Expression cannot be empty",
+		}, nil
+	}
+
+	// Extract variables from the expression
+	variables := extractVariablesFromExpression(req.Expression)
+
+	logger.Info("ExtractVariables completed",
+		logger.String("expression", req.Expression),
+		logger.Int("variables_found", len(variables)))
+
 	return &expressionpb.ExtractVariablesResponse{
-		Success:      false,
-		ErrorMessage: "variable extraction not implemented yet",
+		Variables: variables,
+		Success:   true,
 	}, nil
+}
+
+// extractVariablesFromExpression extracts variable names from expression
+func extractVariablesFromExpression(expression string) []string {
+	variableSet := make(map[string]bool)
+	variables := []string{}
+
+	// Regular expressions for different variable formats
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}`), // ${variableName}
+		regexp.MustCompile(`#\{([a-zA-Z_][a-zA-Z0-9_]*)\}`),  // #{variableName} - Camunda style
+		regexp.MustCompile(`\b([a-zA-Z_][a-zA-Z0-9_]*)\b`),   // Simple variable names
+	}
+
+	// Handle FEEL expressions starting with "="
+	expr := strings.TrimPrefix(expression, "=")
+
+	// Extract variables using regex patterns
+	for i, pattern := range patterns {
+		matches := pattern.FindAllStringSubmatch(expr, -1)
+		for _, match := range matches {
+			if len(match) > 1 {
+				varName := match[1]
+				// For simple variable pattern (index 2), be more selective
+				if i == 2 {
+					// Skip common keywords and operators
+					if isKeywordOrOperator(varName) {
+						continue
+					}
+				}
+				if !variableSet[varName] {
+					variableSet[varName] = true
+					variables = append(variables, varName)
+				}
+			}
+		}
+	}
+
+	return variables
+}
+
+// isKeywordOrOperator checks if a string is a common keyword or operator
+func isKeywordOrOperator(s string) bool {
+	keywords := map[string]bool{
+		"true": true, "false": true, "null": true, "undefined": true,
+		"and": true, "or": true, "not": true, "if": true, "then": true,
+		"else": true, "for": true, "in": true, "some": true, "every": true,
+		"function": true, "return": true, "satisfies": true,
+	}
+	return keywords[strings.ToLower(s)]
+}
+
+// getResultType determines the type of the result value
+func getResultType(value interface{}) string {
+	if value == nil {
+		return "null"
+	}
+
+	switch value.(type) {
+	case string:
+		return "string"
+	case bool:
+		return "boolean"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return "number"
+	case float32, float64:
+		return "number"
+	case []interface{}:
+		return "array"
+	case map[string]interface{}:
+		return "object"
+	default:
+		return "unknown"
+	}
 }
