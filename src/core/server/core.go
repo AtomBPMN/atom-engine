@@ -17,6 +17,7 @@ import (
 	"atom-engine/src/core/auth"
 	"atom-engine/src/core/config"
 	"atom-engine/src/core/grpc"
+	"atom-engine/src/core/interfaces"
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
 	"atom-engine/src/core/restapi"
@@ -158,6 +159,44 @@ func (c *Core) GetAuthComponent() interface{} {
 
 // GetStorage returns storage instance
 func (c *Core) GetStorage() interface{} {
+	return c.storage
+}
+
+// Typed component getters for strict type safety
+// Типизированные геттеры компонентов для строгой типобезопасности
+
+// GetMessagesComponentTyped returns typed messages component
+func (c *Core) GetMessagesComponentTyped() interfaces.MessagesComponentInterface {
+	return c.messagesComp
+}
+
+// GetJobsComponentTyped returns typed jobs component
+func (c *Core) GetJobsComponentTyped() interfaces.JobsComponentInterface {
+	return c.jobsComp
+}
+
+// GetParserComponentTyped returns typed parser component
+func (c *Core) GetParserComponentTyped() interfaces.ParserComponentInterface {
+	return c.parserComp
+}
+
+// GetExpressionComponentTyped returns typed expression component
+func (c *Core) GetExpressionComponentTyped() interfaces.ExpressionComponentInterface {
+	return c.expressionComp
+}
+
+// GetIncidentsComponentTyped returns typed incidents component
+func (c *Core) GetIncidentsComponentTyped() interfaces.IncidentsComponentInterface {
+	return c.incidentsComp
+}
+
+// GetAuthComponentTyped returns typed auth component
+func (c *Core) GetAuthComponentTyped() interfaces.AuthComponentInterface {
+	return c.authComp
+}
+
+// GetStorageTyped returns typed storage interface
+func (c *Core) GetStorageTyped() interfaces.StorageInterface {
 	return c.storage
 }
 

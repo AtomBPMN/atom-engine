@@ -10,9 +10,11 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"atom-engine/proto/timewheel/timewheelpb"
 	"atom-engine/src/core/models"
+	"atom-engine/src/storage"
 )
 
 // CoreInterface defines the unified interface that core must provide to all consumers
@@ -29,8 +31,8 @@ type CoreInterface interface {
 	GetTimewheelComponent() TimewheelComponentInterface
 	GetStorageComponent() StorageComponentInterface
 
-	// Component access - generic interfaces
-	// Доступ к компонентам - общие интерфейсы
+	// Component access - legacy interface{} methods for REST handlers compatibility
+	// Доступ к компонентам - legacy методы interface{} для совместимости с REST handlers
 	GetMessagesComponent() interface{}
 	GetJobsComponent() interface{}
 	GetParserComponent() interface{}
@@ -38,6 +40,16 @@ type CoreInterface interface {
 	GetIncidentsComponent() interface{}
 	GetAuthComponent() interface{}
 	GetStorage() interface{}
+
+	// Component access - strictly typed interfaces for new code
+	// Доступ к компонентам - строго типизированные интерфейсы для нового кода
+	GetMessagesComponentTyped() MessagesComponentInterface
+	GetJobsComponentTyped() JobsComponentInterface
+	GetParserComponentTyped() ParserComponentInterface
+	GetExpressionComponentTyped() ExpressionComponentInterface
+	GetIncidentsComponentTyped() IncidentsComponentInterface
+	GetAuthComponentTyped() AuthComponentInterface
+	GetStorageTyped() StorageInterface
 
 	// Timer management
 	// Управление таймерами
@@ -174,3 +186,92 @@ type ProcessInstanceList struct {
 // Псевдоним типа для models.Token
 type Token = models.Token
 type TokenState = models.TokenState
+
+// Strict component interfaces to replace interface{}
+// Строгие интерфейсы компонентов для замены interface{}
+
+// MessagesComponentInterface defines messages component interface
+// Определяет интерфейс messages компонента
+type MessagesComponentInterface interface {
+	ProcessMessage(ctx context.Context, messageJSON string) error
+	GetResponseChannel() <-chan string
+	PublishMessage(ctx context.Context, tenantID, messageName, correlationKey, elementID string, variables map[string]interface{}, ttl *time.Duration) (*models.MessageCorrelationResult, error)
+	ListBufferedMessages(ctx context.Context, tenantID string, limit, offset int) ([]*models.BufferedMessage, error)
+	ListMessageSubscriptions(ctx context.Context, tenantID string, limit, offset int) ([]*models.ProcessMessageSubscription, error)
+	CleanupExpiredMessages(ctx context.Context) (int, error)
+	// Note: GetMessageStats returns component-specific type, not interfaces type
+}
+
+// JobsComponentInterface defines jobs component interface
+// Определяет интерфейс jobs компонента
+type JobsComponentInterface interface {
+	ProcessMessage(ctx context.Context, messageJSON string) error
+	GetResponseChannel() <-chan string
+	CreateJob(jobType, processInstanceID string, variables map[string]interface{}) (string, error)
+	// Note: Real methods return component-specific types, not interfaces types
+}
+
+// ParserComponentInterface defines parser component interface  
+// Определяет интерфейс parser компонента
+type ParserComponentInterface interface {
+	ProcessMessage(ctx context.Context, messageJSON string) error
+	GetResponseChannel() <-chan string
+	DeleteBPMNProcess(processID string) error // Real signature without context
+	// Note: Other methods return component-specific types
+}
+
+// ExpressionComponentInterface defines expression component interface
+// Определяет интерфейс expression компонента
+type ExpressionComponentInterface interface {
+	EvaluateExpression(expression string, variables map[string]interface{}) (interface{}, error)
+	EvaluateCondition(variables map[string]interface{}, condition string) (bool, error)
+	EvaluateExpressionEngine(expression interface{}, variables map[string]interface{}) (interface{}, error)
+	ParseRetries(retriesStr string) (int, error)
+	// Note: Expression component does not have JSON message handling methods
+}
+
+// IncidentsComponentInterface defines incidents component interface
+// Определяет интерфейс incidents компонента
+type IncidentsComponentInterface interface {
+	ProcessMessage(ctx context.Context, messageJSON string) error
+	GetResponseChannel() <-chan string
+	// Note: Component uses its own types for CreateIncidentRequest, Incident, etc.
+}
+
+// AuthComponentInterface defines auth component interface
+// Определяет интерфейс auth компонента  
+type AuthComponentInterface interface {
+	IsEnabled() bool
+	IsReady() bool
+	// Note: Component uses its own AuthContext and AuthResult types
+}
+
+// StorageInterface is a type alias for storage.Storage
+// StorageInterface является псевдонимом типа для storage.Storage
+type StorageInterface = storage.Storage
+
+// Data transfer objects for strict typing
+// Объекты передачи данных для строгой типизации
+
+// Note: Most component-specific types are defined in their respective packages
+// Большинство типов специфичных для компонентов определены в их собственных пакетах
+
+// StorageInfo represents storage information
+// Представляет информацию о хранилище
+type StorageInfo struct {
+	TotalSizeBytes int64             `json:"total_size_bytes"`
+	UsedSizeBytes  int64             `json:"used_size_bytes"`
+	FreeSizeBytes  int64             `json:"free_size_bytes"`
+	TotalKeys      int64             `json:"total_keys"`
+	DatabasePath   string            `json:"database_path"`
+	Statistics     map[string]string `json:"statistics"`
+}
+
+// StorageStatus represents storage status
+// Представляет статус хранилища
+type StorageStatus struct {
+	IsConnected   bool   `json:"is_connected"`
+	IsHealthy     bool   `json:"is_healthy"`
+	Status        string `json:"status"`
+	UptimeSeconds int64  `json:"uptime_seconds"`
+}
