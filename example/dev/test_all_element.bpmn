@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_1c1vtj9" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.37.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.7.0">
+  <bpmn:collaboration id="Collaboration_100_main_test">
+    <bpmn:documentation>Главная колобарация</bpmn:documentation>
+    <bpmn:participant id="Participant_100_main_poll" name="Participant_100_main_poll" processRef="Process_100_main_test">
+      <bpmn:documentation>Пулл основного процесса на проверку всех элементов в систме</bpmn:documentation>
+    </bpmn:participant>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_100_main_test" name="Main Test Process 100" isExecutable="true">
+    <bpmn:documentation>Главный тестовый flow</bpmn:documentation>
+    <bpmn:extensionElements>
+      <zeebe:versionTag value="v100" />
+      <zeebe:properties>
+        <zeebe:property name="camundaModeler:exampleOutputJson" value="{&#34;way&#34;:&#34;one&#34;}" />
+      </zeebe:properties>
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="StartEvent_main_poll" name="StartEvent main_poll">
+      <bpmn:documentation>Запуск главного процесса</bpmn:documentation>
+      <bpmn:extensionElements>
+        <zeebe:properties>
+          <zeebe:property name="camundaModeler:exampleOutputJson" value="{&#34;way&#34;:&#34;one&#34;,&#34;num&#34;: 5,&#34;timer_daration_1_way_1&#34;: &#34;PT30s&#34;}" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_12pne01</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:parallelGateway id="Parallel_Gateway_1" name="Паралельный шлюз">
+      <bpmn:documentation>Запускает все ветки одновременно</bpmn:documentation>
+      <bpmn:incoming>Flow_12pne01</bpmn:incoming>
+      <bpmn:outgoing>Flow_1_way_1</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:task id="undefined_task_1" name="Undefined Task way 1">
+      <bpmn:documentation>не определенная задача путь 1</bpmn:documentation>
+      <bpmn:incoming>Flow_1_way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2_way_1</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:intermediateCatchEvent id="Event_timer_2_way_1" name="EvenTimer 2 way 1">
+      <bpmn:documentation>Таймер 2 путь 1</bpmn:documentation>
+      <bpmn:incoming>Flow_4_way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_0py90oy</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_17wqdri">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">=timer_daration_1_way_1</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="Service_Task_1_Way_1" name="Service Task 1 Way 1">
+      <bpmn:documentation>Сервисная задача по пути 1</bpmn:documentation>
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="Service_Task_Job_1_R3_Way_1" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_3_way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_4_way_1</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:intermediateCatchEvent id="Event_timer_1_way_1" name="EvenTimer 1 way 1">
+      <bpmn:documentation>Таймер 1 путь 1</bpmn:documentation>
+      <bpmn:incoming>Flow_2_way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_3_way_1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_1pprxgp">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT10s</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="End_Event_Error_1_Way_1" name="End Event Error 1 Way 1">
+      <bpmn:incoming>Flow_2_error_way_1</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="End_Event_Way_1" name="End Event Way 1">
+      <bpmn:incoming>Flow_0py90oy</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_12pne01" sourceRef="StartEvent_main_poll" targetRef="Parallel_Gateway_1" />
+    <bpmn:sequenceFlow id="Flow_1_way_1" name="Flow_1_way_1" sourceRef="Parallel_Gateway_1" targetRef="undefined_task_1" />
+    <bpmn:sequenceFlow id="Flow_2_way_1" name="Flow_2_way_1" sourceRef="undefined_task_1" targetRef="Event_timer_1_way_1" />
+    <bpmn:sequenceFlow id="Flow_4_way_1" name="Flow_4_way_1" sourceRef="Service_Task_1_Way_1" targetRef="Event_timer_2_way_1" />
+    <bpmn:sequenceFlow id="Flow_0py90oy" sourceRef="Event_timer_2_way_1" targetRef="End_Event_Way_1" />
+    <bpmn:sequenceFlow id="Flow_3_way_1" name="Flow_3_way_1" sourceRef="Event_timer_1_way_1" targetRef="Service_Task_1_Way_1" />
+    <bpmn:sequenceFlow id="Flow_1_error_way_1" name="Flow_1_error_way_1" sourceRef="Error_Boundary_Event_way_1" targetRef="Timer_Event_Error_Boundary_Way_1" />
+    <bpmn:sequenceFlow id="Flow_2_error_way_1" name="Flow_2_error_way_1" sourceRef="Timer_Event_Error_Boundary_Way_1" targetRef="End_Event_Error_1_Way_1" />
+    <bpmn:boundaryEvent id="Error_Boundary_Event_way_1" name="Error Boundary Event way 1" attachedToRef="Service_Task_1_Way_1">
+      <bpmn:documentation>Срабатывает если была выброшена ошибка 100</bpmn:documentation>
+      <bpmn:outgoing>Flow_1_error_way_1</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="ErrorEventDefinition_15ga5nv" errorRef="Error_0hzojzo" />
+    </bpmn:boundaryEvent>
+    <bpmn:intermediateCatchEvent id="Timer_Event_Error_Boundary_Way_1" name="Timer Event Error Boundary Way 1">
+      <bpmn:documentation>Таймер запустится только если убдет выброшена ошибка</bpmn:documentation>
+      <bpmn:incoming>Flow_1_error_way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2_error_way_1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_0s00w5v">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT30s</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:boundaryEvent id="Timer_Interruping_Boundary_Way_1" name="Timer Interruping Boundary Way 1" attachedToRef="Service_Task_1_Way_1">
+      <bpmn:outgoing>Flow_1_Timer_interruping_Way_1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_0fyxmvv">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT120s</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:intermediateCatchEvent id="Timer_Event_Interruping_Boundary_Way_1" name="Timer Event Interruping Boundary Way 1">
+      <bpmn:incoming>Flow_1_Timer_interruping_Way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2_Timer_interruping_Way_1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_0n83sdx">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">=timer_daration_1_way_1</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="Flow_1_Timer_interruping_Way_1" name="Flow 1 Timer interruping Way 1" sourceRef="Timer_Interruping_Boundary_Way_1" targetRef="Timer_Event_Interruping_Boundary_Way_1" />
+    <bpmn:endEvent id="End_Event_Timer_interruping_1_Way_1" name="End Event Timer interruping 1 Way 1">
+      <bpmn:incoming>Flow_2_Timer_interruping_Way_1</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_2_Timer_interruping_Way_1" name="Flow_2_Timer_interruping_Way_1" sourceRef="Timer_Event_Interruping_Boundary_Way_1" targetRef="End_Event_Timer_interruping_1_Way_1" />
+    <bpmn:boundaryEvent id="Timer_NON_Interruping_Boundary_Way_1" name="Timer NON Interruping Boundary Way 1" cancelActivity="false" attachedToRef="Service_Task_1_Way_1">
+      <bpmn:outgoing>Flow_1_NON_Timer_interruping_Way_1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_1uiwljd">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">R3/PT30s</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:sequenceFlow id="Flow_1_NON_Timer_interruping_Way_1" name="Flow 1 Timer NON interruping Way 1" sourceRef="Timer_NON_Interruping_Boundary_Way_1" targetRef="Timer_Event_NON_Interruping_Boundary_Way_1" />
+    <bpmn:intermediateCatchEvent id="Timer_Event_NON_Interruping_Boundary_Way_1" name="Timer Event NON Interruping Boundary Way 1">
+      <bpmn:incoming>Flow_1_NON_Timer_interruping_Way_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2_Timer_NON_interruping_Way_1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_1rbrc9a">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT15s</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:endEvent id="End_Event_NON_Timer_interruping_1_Way_1" name="End Event NON Timer interruping 1 Way 1">
+      <bpmn:incoming>Flow_2_Timer_NON_interruping_Way_1</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_2_Timer_NON_interruping_Way_1" name="Flow_2_Timer_NON_interruping_Way_1" sourceRef="Timer_Event_NON_Interruping_Boundary_Way_1" targetRef="End_Event_NON_Timer_interruping_1_Way_1" />
+  </bpmn:process>
+  <bpmn:error id="Error_0hzojzo" name="Error Boundary Event way 1" errorCode="100" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_100_main_test">
+      <bpmndi:BPMNShape id="Participant_1c23n9j_di" bpmnElement="Participant_100_main_poll" isHorizontal="true">
+        <dc:Bounds x="160" y="85" width="1840" height="1255" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_main_poll">
+        <dc:Bounds x="242" y="692" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="234" y="735" width="52" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_0b0n8el_di" bpmnElement="Parallel_Gateway_1">
+        <dc:Bounds x="335" y="685" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="325" y="742" width="71" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1rt5mef_di" bpmnElement="undefined_task_1">
+        <dc:Bounds x="500" y="110" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_19zdxm9_di" bpmnElement="Event_timer_2_way_1">
+        <dc:Bounds x="1132" y="132" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1108" y="175" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Activity_1mjuu4d_di" bpmnElement="Service_Task_1_Way_1">
+        <dc:Bounds x="920" y="110" width="100" height="80" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0bzuccv_di" bpmnElement="Event_timer_1_way_1">
+        <dc:Bounds x="742" y="132" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="719" y="175" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_19arfhl_di" bpmnElement="End_Event_Error_1_Way_1">
+        <dc:Bounds x="1262" y="332" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1238" y="375" width="88" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_17q0722_di" bpmnElement="End_Event_Way_1">
+        <dc:Bounds x="1262" y="132" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1238" y="175" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0feoryv_di" bpmnElement="Timer_Event_Error_Boundary_Way_1">
+        <dc:Bounds x="1002" y="332" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="984" y="375" width="76" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0zc2yy9_di" bpmnElement="Timer_Event_Interruping_Boundary_Way_1">
+        <dc:Bounds x="952" y="452" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="932" y="495" width="81" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_180ba8b_di" bpmnElement="End_Event_Timer_interruping_1_Way_1">
+        <dc:Bounds x="1262" y="452" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1237" y="495" width="87" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0sqa75b_di" bpmnElement="Timer_Event_NON_Interruping_Boundary_Way_1">
+        <dc:Bounds x="952" y="562" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="928" y="605" width="86" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1jrl13e_di" bpmnElement="End_Event_NON_Timer_interruping_1_Way_1">
+        <dc:Bounds x="1262" y="562" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1239" y="605" width="83" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_18zexex_di" bpmnElement="Error_Boundary_Event_way_1">
+        <dc:Bounds x="1002" y="172" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1042" y="186" width="76" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_00pzlzc_di" bpmnElement="Timer_Interruping_Boundary_Way_1">
+        <dc:Bounds x="952" y="172" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="938" y="215" width="83" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_1eyib18_di" bpmnElement="Timer_NON_Interruping_Boundary_Way_1">
+        <dc:Bounds x="902" y="172" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="819" y="180" width="81" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_12pne01_di" bpmnElement="Flow_12pne01">
+        <di:waypoint x="278" y="710" />
+        <di:waypoint x="335" y="710" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0738e4s_di" bpmnElement="Flow_1_way_1">
+        <di:waypoint x="360" y="685" />
+        <di:waypoint x="360" y="150" />
+        <di:waypoint x="500" y="150" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="383" y="132" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1hshggd_di" bpmnElement="Flow_2_way_1">
+        <di:waypoint x="600" y="150" />
+        <di:waypoint x="742" y="150" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="634" y="132" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1av3qc2_di" bpmnElement="Flow_4_way_1">
+        <di:waypoint x="1020" y="150" />
+        <di:waypoint x="1132" y="150" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1039" y="132" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0py90oy_di" bpmnElement="Flow_0py90oy">
+        <di:waypoint x="1168" y="150" />
+        <di:waypoint x="1262" y="150" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1jixex1_di" bpmnElement="Flow_3_way_1">
+        <di:waypoint x="778" y="150" />
+        <di:waypoint x="920" y="150" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="812" y="132" width="74" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0gpeywa_di" bpmnElement="Flow_1_error_way_1">
+        <di:waypoint x="1020" y="208" />
+        <di:waypoint x="1020" y="332" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1033" y="256" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1irzcqs_di" bpmnElement="Flow_2_error_way_1">
+        <di:waypoint x="1038" y="350" />
+        <di:waypoint x="1262" y="350" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1107" y="316" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1gsjz7e_di" bpmnElement="Flow_1_Timer_interruping_Way_1">
+        <di:waypoint x="970" y="208" />
+        <di:waypoint x="970" y="452" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="927" y="266" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1n89ncl_di" bpmnElement="Flow_2_Timer_interruping_Way_1">
+        <di:waypoint x="988" y="470" />
+        <di:waypoint x="1262" y="470" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1109" y="436" width="84" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_1kq7sno_di" bpmnElement="Flow_1_NON_Timer_interruping_Way_1">
+        <di:waypoint x="920" y="208" />
+        <di:waypoint x="920" y="580" />
+        <di:waypoint x="952" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="840" y="320" width="80" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_13gc92u_di" bpmnElement="Flow_2_Timer_NON_interruping_Way_1">
+        <di:waypoint x="988" y="580" />
+        <di:waypoint x="1262" y="580" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1109" y="530" width="84" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
