@@ -11,15 +11,18 @@ package handlers
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"atom-engine/src/core/grpc"
+	"atom-engine/src/core/interfaces"
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
 	"atom-engine/src/core/restapi/middleware"
 	restmodels "atom-engine/src/core/restapi/models"
 	"atom-engine/src/core/restapi/utils"
+	"atom-engine/src/core/types"
 )
 
 // ProcessHandler handles process management HTTP requests
@@ -31,7 +34,17 @@ type ProcessHandler struct {
 
 // ProcessCoreInterface defines methods needed for process operations
 type ProcessCoreInterface interface {
+	// Legacy interface access
 	GetProcessComponent() grpc.ProcessComponentInterface
+
+	// New typed interface access
+	GetProcessComponentTyped() interfaces.ProcessComponentTypedInterface
+
+	// Core typed methods for process operations
+	StartProcessTyped(req *types.ProcessStartRequest) (*types.ProcessStartResponse, error)
+	CancelProcessTyped(req *types.ProcessCancelRequest) (*types.ProcessCancelResponse, error)
+	GetSystemStatus() (*types.SystemStatus, error)
+	GetSystemMetrics() (*types.SystemMetrics, error)
 }
 
 // ProcessComponentInterface defines process component interface
@@ -94,12 +107,22 @@ func (h *ProcessHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware 
 	}
 
 	{
+		// Legacy v1 endpoints - maintain backward compatibility
 		processes.POST("", h.StartProcess)
 		processes.GET("", h.ListProcesses)
 		processes.GET("/:id", h.GetProcessStatus)
 		processes.DELETE("/:id", h.CancelProcess)
 		processes.GET("/:id/tokens", h.GetProcessTokens)
 		processes.GET("/:id/tokens/trace", h.GetTokenTrace)
+
+		// New typed endpoints for enhanced functionality
+		processes.POST("/typed", h.StartProcessTyped)
+		processes.GET("/typed", h.ListProcessesTyped)
+		processes.GET("/:id/typed", h.GetProcessStatusTyped)
+		processes.DELETE("/:id/typed", h.CancelProcessTyped)
+		processes.GET("/:id/tokens/typed", h.GetProcessTokensTyped)
+		processes.GET("/:id/trace/typed", h.TraceProcessExecutionTyped)
+		processes.GET("/stats", h.GetProcessStatsHandler)
 	}
 }
 
@@ -602,4 +625,445 @@ func (h *ProcessHandler) GetProcessStats() (*ProcessStats, error) {
 	}
 
 	return stats, nil
+}
+
+// Typed API handlers for enhanced functionality
+// Typed API обработчики для расширенной функциональности
+
+// StartProcessTyped handles POST /api/v1/processes/typed
+// @Summary Start process instance with typed request/response
+// @Description Start a new process instance using strongly typed API
+// @Tags processes
+// @Accept json
+// @Produce json
+// @Param request body types.ProcessStartRequest true "Typed process start request"
+// @Success 201 {object} restmodels.APIResponse{data=types.ProcessStartResponse}
+// @Failure 400 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/typed [post]
+func (h *ProcessHandler) StartProcessTyped(c *gin.Context) {
+	requestID := h.getRequestID(c)
+
+	// Parse typed request body
+	var req types.ProcessStartRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Error("Failed to parse typed start process request",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
+		apiErr := restmodels.BadRequestError("Invalid request body: " + err.Error())
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Starting process instance with typed API",
+		logger.String("request_id", requestID),
+		logger.String("process_key", req.ProcessKey),
+		logger.String("client_ip", c.ClientIP()))
+
+	// Use Core typed method
+	result, err := h.coreInterface.StartProcessTyped(&req)
+	if err != nil {
+		logger.Error("Failed to start process instance via typed API",
+			logger.String("request_id", requestID),
+			logger.String("process_key", req.ProcessKey),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Info("Process instance started via typed API",
+		logger.String("request_id", requestID),
+		logger.String("process_key", req.ProcessKey),
+		logger.String("instance_id", result.InstanceID))
+
+	c.JSON(http.StatusCreated, restmodels.SuccessResponse(result, requestID))
+}
+
+// ListProcessesTyped handles GET /api/v1/processes/typed
+// @Summary List process instances with typed response
+// @Description Get list of process instances using strongly typed API
+// @Tags processes
+// @Produce json
+// @Param process_key query string false "Process key filter"
+// @Param status query string false "Status filter"
+// @Param tenant_id query string false "Tenant ID filter"
+// @Param limit query int false "Items per page" default(20)
+// @Param offset query int false "Offset" default(0)
+// @Success 200 {object} restmodels.APIResponse{data=types.ProcessListResponse}
+// @Failure 400 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/typed [get]
+func (h *ProcessHandler) ListProcessesTyped(c *gin.Context) {
+	requestID := h.getRequestID(c)
+
+	// Parse query parameters into typed request
+	req := &types.ProcessListRequest{
+		Limit:  20, // Default
+		Offset: 0,  // Default
+	}
+
+	if processKey := c.Query("process_key"); processKey != "" {
+		req.ProcessKey = &processKey
+	}
+
+	if status := c.Query("status"); status != "" {
+		processStatus := types.ProcessStatus(status)
+		req.Status = &processStatus
+	}
+
+	if tenantID := c.Query("tenant_id"); tenantID != "" {
+		req.TenantID = &tenantID
+	}
+
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			req.Limit = int32(limit)
+		}
+	}
+
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
+			req.Offset = int32(offset)
+		}
+	}
+
+	logger.Debug("Listing process instances with typed API",
+		logger.String("request_id", requestID),
+		logger.Any("request", req))
+
+	// Get typed process component
+	processComp := h.coreInterface.GetProcessComponentTyped()
+	if processComp == nil {
+		apiErr := restmodels.InternalServerError("Typed process service not available")
+		c.JSON(http.StatusInternalServerError, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// List process instances using typed method
+	result, err := processComp.ListProcessInstancesTyped(req)
+	if err != nil {
+		logger.Error("Failed to list process instances via typed API",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Listed process instances via typed API",
+		logger.String("request_id", requestID),
+		logger.Int("count", int(result.TotalCount)))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// GetProcessStatusTyped handles GET /api/v1/processes/:id/typed
+// @Summary Get process instance status with typed response
+// @Description Get detailed process instance information using strongly typed API
+// @Tags processes
+// @Produce json
+// @Param id path string true "Process instance ID"
+// @Success 200 {object} restmodels.APIResponse{data=types.ProcessInstanceDetails}
+// @Failure 404 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/{id}/typed [get]
+func (h *ProcessHandler) GetProcessStatusTyped(c *gin.Context) {
+	requestID := h.getRequestID(c)
+	instanceID := c.Param("id")
+
+	if instanceID == "" {
+		apiErr := restmodels.BadRequestError("Process instance ID is required")
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Getting process status with typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID))
+
+	// Get typed process component
+	processComp := h.coreInterface.GetProcessComponentTyped()
+	if processComp == nil {
+		apiErr := restmodels.InternalServerError("Typed process service not available")
+		c.JSON(http.StatusInternalServerError, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Get process status using typed method
+	result, err := processComp.GetProcessInstanceStatusTyped(instanceID)
+	if err != nil {
+		logger.Error("Failed to get process status via typed API",
+			logger.String("request_id", requestID),
+			logger.String("instance_id", instanceID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Got process status via typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.String("status", string(result.Status)))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// CancelProcessTyped handles DELETE /api/v1/processes/:id/typed
+// @Summary Cancel process instance with typed request/response
+// @Description Cancel a process instance using strongly typed API
+// @Tags processes
+// @Accept json
+// @Produce json
+// @Param id path string true "Process instance ID"
+// @Param request body types.ProcessCancelRequest true "Typed cancel request"
+// @Success 200 {object} restmodels.APIResponse{data=types.ProcessCancelResponse}
+// @Failure 400 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 404 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/{id}/typed [delete]
+func (h *ProcessHandler) CancelProcessTyped(c *gin.Context) {
+	requestID := h.getRequestID(c)
+	instanceID := c.Param("id")
+
+	if instanceID == "" {
+		apiErr := restmodels.BadRequestError("Process instance ID is required")
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Parse typed request body
+	var req types.ProcessCancelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Allow empty body - just set instance ID from path
+		req.InstanceID = instanceID
+	} else {
+		// Override instance ID from path parameter
+		req.InstanceID = instanceID
+	}
+
+	logger.Debug("Cancelling process with typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.String("reason", req.Reason))
+
+	// Use Core typed method
+	result, err := h.coreInterface.CancelProcessTyped(&req)
+	if err != nil {
+		logger.Error("Failed to cancel process via typed API",
+			logger.String("request_id", requestID),
+			logger.String("instance_id", instanceID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Info("Process cancelled via typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// GetProcessTokensTyped handles GET /api/v1/processes/:id/tokens/typed
+// @Summary Get process tokens with typed response
+// @Description Get tokens for a process instance using strongly typed API
+// @Tags processes
+// @Produce json
+// @Param id path string true "Process instance ID"
+// @Param active_only query bool false "Return only active tokens" default(false)
+// @Param limit query int false "Items per page" default(50)
+// @Param offset query int false "Offset" default(0)
+// @Success 200 {object} restmodels.APIResponse{data=types.TokenListResponse}
+// @Failure 404 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/{id}/tokens/typed [get]
+func (h *ProcessHandler) GetProcessTokensTyped(c *gin.Context) {
+	requestID := h.getRequestID(c)
+	instanceID := c.Param("id")
+
+	if instanceID == "" {
+		apiErr := restmodels.BadRequestError("Process instance ID is required")
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Parse query parameters
+	req := &types.TokenListRequest{
+		ProcessInstanceID: &instanceID,
+		ActiveOnly:        c.Query("active_only") == "true",
+		Limit:             50, // Default
+		Offset:            0,  // Default
+	}
+
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if limit, err := strconv.Atoi(limitStr); err == nil && limit > 0 {
+			req.Limit = int32(limit)
+		}
+	}
+
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if offset, err := strconv.Atoi(offsetStr); err == nil && offset >= 0 {
+			req.Offset = int32(offset)
+		}
+	}
+
+	logger.Debug("Getting process tokens with typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.Bool("active_only", req.ActiveOnly))
+
+	// Get typed process component
+	processComp := h.coreInterface.GetProcessComponentTyped()
+	if processComp == nil {
+		apiErr := restmodels.InternalServerError("Typed process service not available")
+		c.JSON(http.StatusInternalServerError, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Get tokens using typed method
+	result, err := processComp.GetTokensTyped(req)
+	if err != nil {
+		logger.Error("Failed to get process tokens via typed API",
+			logger.String("request_id", requestID),
+			logger.String("instance_id", instanceID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Got process tokens via typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.Int("count", int(result.TotalCount)))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// TraceProcessExecutionTyped handles GET /api/v1/processes/:id/trace/typed
+// @Summary Trace process execution with typed response
+// @Description Get detailed execution trace for a process instance using strongly typed API
+// @Tags processes
+// @Produce json
+// @Param id path string true "Process instance ID"
+// @Param include_variables query bool false "Include variable details" default(true)
+// @Param include_metadata query bool false "Include metadata" default(false)
+// @Success 200 {object} restmodels.APIResponse{data=types.ProcessTraceResponse}
+// @Failure 404 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/{id}/trace/typed [get]
+func (h *ProcessHandler) TraceProcessExecutionTyped(c *gin.Context) {
+	requestID := h.getRequestID(c)
+	instanceID := c.Param("id")
+
+	if instanceID == "" {
+		apiErr := restmodels.BadRequestError("Process instance ID is required")
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Parse query parameters
+	req := &types.ProcessTraceRequest{
+		ProcessInstanceID: instanceID,
+		IncludeVariables:  c.DefaultQuery("include_variables", "true") == "true",
+		IncludeMetadata:   c.Query("include_metadata") == "true",
+	}
+
+	logger.Debug("Tracing process execution with typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.Bool("include_variables", req.IncludeVariables),
+		logger.Bool("include_metadata", req.IncludeMetadata))
+
+	// Get typed process component
+	processComp := h.coreInterface.GetProcessComponentTyped()
+	if processComp == nil {
+		apiErr := restmodels.InternalServerError("Typed process service not available")
+		c.JSON(http.StatusInternalServerError, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Get execution trace using typed method
+	result, err := processComp.TraceProcessExecution(req)
+	if err != nil {
+		logger.Error("Failed to trace process execution via typed API",
+			logger.String("request_id", requestID),
+			logger.String("instance_id", instanceID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Traced process execution via typed API",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.Int("total_tokens", int(result.TotalTokens)))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// GetProcessStatsHandler handles GET /api/v1/processes/stats
+// @Summary Get process statistics with typed response
+// @Description Get comprehensive process statistics using strongly typed API
+// @Tags processes
+// @Produce json
+// @Success 200 {object} restmodels.APIResponse{data=types.ProcessStats}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/stats [get]
+func (h *ProcessHandler) GetProcessStatsHandler(c *gin.Context) {
+	requestID := h.getRequestID(c)
+
+	logger.Debug("Getting process statistics with typed API",
+		logger.String("request_id", requestID))
+
+	// Get typed process component
+	processComp := h.coreInterface.GetProcessComponentTyped()
+	if processComp == nil {
+		apiErr := restmodels.InternalServerError("Typed process service not available")
+		c.JSON(http.StatusInternalServerError, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Get process statistics using typed method
+	result, err := processComp.GetProcessStats()
+	if err != nil {
+		logger.Error("Failed to get process statistics via typed API",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Got process statistics via typed API",
+		logger.String("request_id", requestID),
+		logger.Int64("total_instances", result.TotalInstances))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
 }

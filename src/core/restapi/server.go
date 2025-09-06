@@ -82,11 +82,12 @@ type Server struct {
 	messagesHandler   *handlers.MessagesHandler
 	expressionHandler *handlers.ExpressionHandler
 	incidentsHandler  *handlers.IncidentsHandler
+	systemHandler     *handlers.SystemHandler
 }
 
-// Import the unified core interface
-// Импортируем унифицированный интерфейс core
-type CoreInterface = interfaces.CoreInterface
+// Import the unified core interface (with typed support)
+// Импортируем унифицированный интерфейс core (с поддержкой типизации)
+type CoreInterface = interfaces.CoreTypedInterface
 
 // Response types (simplified for REST)
 type StorageStatusResponse struct {
@@ -216,6 +217,7 @@ func (s *Server) setupHandlers() {
 	s.messagesHandler = handlers.NewMessagesHandler(s.coreInterface)
 	s.expressionHandler = handlers.NewExpressionHandler(s.coreInterface)
 	s.incidentsHandler = handlers.NewIncidentsHandler(s.coreInterface)
+	s.systemHandler = handlers.NewSystemHandler(s.coreInterface)
 }
 
 // setupRouter configures Gin router and middleware
@@ -289,6 +291,7 @@ func (s *Server) setupRoutes() {
 		s.messagesHandler.RegisterRoutes(v1, s.authMiddleware)
 		s.expressionHandler.RegisterRoutes(v1, s.authMiddleware)
 		s.incidentsHandler.RegisterRoutes(v1, s.authMiddleware)
+		s.systemHandler.RegisterRoutes(v1, s.authMiddleware)
 	}
 
 	// Swagger documentation

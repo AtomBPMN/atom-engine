@@ -11,6 +11,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"atom-engine/src/core/models"
 	"atom-engine/src/core/restapi"
 	"atom-engine/src/core/restapi/handlers"
+	"atom-engine/src/core/types"
 	"atom-engine/src/expression"
 	"atom-engine/src/incidents"
 	"atom-engine/src/jobs"
@@ -51,6 +53,11 @@ type Core struct {
 	loggerReady    bool
 	mu             sync.RWMutex
 	running        bool
+
+	// Additional fields for typed interface implementation
+	// Дополнительные поля для реализации typed интерфейса
+	startTime      time.Time
+	isShuttingDown bool
 }
 
 // NewCore creates new core instance
@@ -124,6 +131,11 @@ func NewCoreWithConfig(cfg *config.Config) (*Core, error) {
 		authComp:       authComp,
 		loggerReady:    false,
 		running:        false,
+
+		// Initialize typed interface fields
+		// Инициализируем поля для typed интерфейса
+		startTime:      time.Now(),
+		isShuttingDown: false,
 	}, nil
 }
 
@@ -164,6 +176,14 @@ func (c *Core) GetStorage() interface{} {
 
 // Typed component getters for strict type safety
 // Типизированные геттеры компонентов для строгой типобезопасности
+
+// GetProcessComponentTyped returns typed process component
+func (c *Core) GetProcessComponentTyped() interfaces.ProcessComponentTypedInterface {
+	if c.processComp == nil {
+		return nil
+	}
+	return &processComponentAdapter{comp: c.processComp}
+}
 
 // GetMessagesComponentTyped returns typed messages component
 func (c *Core) GetMessagesComponentTyped() interfaces.MessagesComponentInterface {
@@ -430,4 +450,467 @@ waitForResponse:
 	case <-time.After(timeout):
 		return "", fmt.Errorf("timeout waiting for incidents response after %dms", timeoutMs)
 	}
+}
+
+// CoreTypedInterface implementation
+// Реализация CoreTypedInterface
+
+// GetSystemStatus returns comprehensive system status
+// Возвращает комплексный статус системы
+func (c *Core) GetSystemStatus() (*types.SystemStatus, error) {
+	if c.isShuttingDown {
+		return nil, fmt.Errorf("system is shutting down")
+	}
+
+	now := time.Now()
+	components := c.gatherComponentsInfo()
+
+	componentsTotal := int32(len(components))
+	componentsReady := int32(0)
+	componentsError := int32(0)
+
+	for _, comp := range components {
+		if comp.IsReady() {
+			componentsReady++
+		}
+		if comp.HasError() {
+			componentsError++
+		}
+	}
+
+	status := types.ComponentStatusRunning
+	health := types.ComponentHealthHealthy
+
+	if componentsError > 0 {
+		health = types.ComponentHealthDegraded
+		if componentsError > componentsTotal/2 {
+			health = types.ComponentHealthUnhealthy
+			status = types.ComponentStatusDegraded
+		}
+	}
+
+	uptime := now.Sub(c.startTime)
+
+	return &types.SystemStatus{
+		Status:          status,
+		Health:          health,
+		Version:         "1.0.0", // TODO: get from build info
+		StartedAt:       c.startTime,
+		Uptime:          uptime,
+		Components:      components,
+		ComponentsTotal: componentsTotal,
+		ComponentsReady: componentsReady,
+		ComponentsError: componentsError,
+		LastHealthCheck: now,
+		SystemMetrics:   c.gatherSystemMetrics(),
+		Configuration:   c.getSystemConfiguration(),
+	}, nil
+}
+
+// GetSystemInfo returns system information
+// Возвращает информацию о системе
+func (c *Core) GetSystemInfo() (*types.SystemInfo, error) {
+	hostInfo := types.HostInfo{
+		Hostname:     "atom-engine-node", // TODO: get real hostname
+		OS:           runtime.GOOS,
+		Architecture: runtime.GOARCH,
+		CPUCores:     int32(runtime.NumCPU()),
+		MemoryTotal:  0, // TODO: get real memory info
+		DiskTotal:    0, // TODO: get real disk info
+	}
+
+	return &types.SystemInfo{
+		Name:          "Atom Engine",
+		Version:       "1.0.0",       // TODO: get from build info
+		BuildTime:     time.Now(),    // TODO: get real build time
+		GitCommit:     "",            // TODO: get from build info
+		Environment:   "development", // TODO: get from config
+		StartedAt:     c.startTime,
+		Uptime:        time.Since(c.startTime),
+		HostInfo:      hostInfo,
+		Configuration: c.getSystemConfiguration(),
+	}, nil
+}
+
+// GetSystemMetrics returns system metrics
+// Возвращает системные метрики
+func (c *Core) GetSystemMetrics() (*types.SystemMetrics, error) {
+	metrics := c.gatherSystemMetrics()
+	return &metrics, nil
+}
+
+// ListComponents returns list of components
+// Возвращает список компонентов
+func (c *Core) ListComponents(req *types.ComponentListRequest) (*types.ComponentListResponse, error) {
+	components := c.gatherComponentsInfo()
+
+	// Apply filters
+	filtered := make([]types.ComponentInfo, 0)
+	for _, comp := range components {
+		if req.Type != nil && comp.Type != *req.Type {
+			continue
+		}
+		if req.Status != nil && comp.Status != *req.Status {
+			continue
+		}
+		if req.Health != nil && comp.Health != *req.Health {
+			continue
+		}
+		if req.EnabledOnly && !comp.IsEnabled {
+			continue
+		}
+		if req.ReadyOnly && !comp.ReadyFlag {
+			continue
+		}
+
+		filtered = append(filtered, comp)
+	}
+
+	summary := types.ComponentSummary{
+		Total:     int32(len(components)),
+		ByStatus:  make(map[types.ComponentStatus]int32),
+		ByHealth:  make(map[types.ComponentHealth]int32),
+		ByType:    make(map[types.ComponentType]int32),
+		Ready:     0,
+		Enabled:   0,
+		HasErrors: 0,
+	}
+
+	for _, comp := range components {
+		summary.ByStatus[comp.Status]++
+		summary.ByHealth[comp.Health]++
+		summary.ByType[comp.Type]++
+
+		if comp.ReadyFlag {
+			summary.Ready++
+		}
+		if comp.IsEnabled {
+			summary.Enabled++
+		}
+		if comp.HasError() {
+			summary.HasErrors++
+		}
+	}
+
+	return &types.ComponentListResponse{
+		Components: filtered,
+		TotalCount: int32(len(filtered)),
+		Summary:    summary,
+	}, nil
+}
+
+// GetComponentStatus returns component status
+// Возвращает статус компонента
+func (c *Core) GetComponentStatus(componentName string) (*types.ComponentInfo, error) {
+	components := c.gatherComponentsInfo()
+
+	for _, comp := range components {
+		if comp.Name == componentName {
+			return &comp, nil
+		}
+	}
+
+	return nil, fmt.Errorf("component not found: %s", componentName)
+}
+
+// HealthCheck performs health check
+// Выполняет проверку состояния
+func (c *Core) HealthCheck(req *types.ComponentHealthCheckRequest) (*types.ComponentHealthCheckResponse, error) {
+	start := time.Now()
+
+	if req.ComponentName != "" {
+		// Check specific component
+		comp, err := c.GetComponentStatus(req.ComponentName)
+		if err != nil {
+			return &types.ComponentHealthCheckResponse{
+				ComponentName: req.ComponentName,
+				Health:        types.ComponentHealthUnknown,
+				Status:        types.ComponentStatusError,
+				Message:       err.Error(),
+				CheckedAt:     time.Now(),
+				Duration:      time.Since(start),
+			}, nil
+		}
+
+		return &types.ComponentHealthCheckResponse{
+			ComponentName: req.ComponentName,
+			Health:        comp.Health,
+			Status:        comp.Status,
+			Message:       "Component health check completed",
+			CheckedAt:     time.Now(),
+			Duration:      time.Since(start),
+		}, nil
+	}
+
+	// System-wide health check
+	systemStatus, err := c.GetSystemStatus()
+	if err != nil {
+		return &types.ComponentHealthCheckResponse{
+			Health:    types.ComponentHealthUnhealthy,
+			Status:    types.ComponentStatusError,
+			Message:   err.Error(),
+			CheckedAt: time.Now(),
+			Duration:  time.Since(start),
+		}, nil
+	}
+
+	return &types.ComponentHealthCheckResponse{
+		Health:    systemStatus.Health,
+		Status:    systemStatus.Status,
+		Message:   "System health check completed",
+		CheckedAt: time.Now(),
+		Duration:  time.Since(start),
+	}, nil
+}
+
+// StartProcessTyped starts process with typed request
+// Запускает процесс с типизированным запросом
+func (c *Core) StartProcessTyped(req *types.ProcessStartRequest) (*types.ProcessStartResponse, error) {
+	if c.processComp == nil {
+		return nil, fmt.Errorf("process component not available")
+	}
+
+	// Convert typed request to legacy format
+	variables := make(map[string]interface{})
+	for k, v := range req.Variables {
+		variables[k] = v
+	}
+
+	result, err := c.processComp.StartProcessInstance(req.ProcessKey, variables)
+	if err != nil {
+		return &types.ProcessStartResponse{
+			ProcessKey: req.ProcessKey,
+			Success:    false,
+			Message:    err.Error(),
+			StartedAt:  time.Now(),
+		}, err
+	}
+
+	return &types.ProcessStartResponse{
+		InstanceID: result.InstanceID,
+		ProcessKey: result.ProcessKey,
+		Version:    1,                         // TODO: get from result when available
+		Status:     types.ProcessStatusActive, // TODO: convert from result.State when available
+		Success:    true,
+		Message:    "process started successfully",
+		StartedAt:  time.Now(),
+		Variables:  req.Variables,
+	}, nil
+}
+
+// CancelProcessTyped cancels process with typed request
+// Отменяет процесс с типизированным запросом
+func (c *Core) CancelProcessTyped(req *types.ProcessCancelRequest) (*types.ProcessCancelResponse, error) {
+	if c.processComp == nil {
+		return nil, fmt.Errorf("process component not available")
+	}
+
+	err := c.processComp.CancelProcessInstance(req.InstanceID, req.Reason)
+	if err != nil {
+		return &types.ProcessCancelResponse{
+			InstanceID:  req.InstanceID,
+			Success:     false,
+			Message:     err.Error(),
+			CancelledAt: time.Now(),
+		}, err
+	}
+
+	return &types.ProcessCancelResponse{
+		InstanceID:  req.InstanceID,
+		Success:     true,
+		Message:     "process cancelled successfully",
+		CancelledAt: time.Now(),
+	}, nil
+}
+
+// ExecuteOperation executes generic operation
+// Выполняет общую операцию
+func (c *Core) ExecuteOperation(operationName string, params types.Variables) (*types.OperationResult, error) {
+	start := time.Now()
+
+	// TODO: Implement operation registry and execution
+	return &types.OperationResult{
+		Success:    false,
+		Message:    "operation execution not implemented yet",
+		Data:       nil,
+		ExecutedAt: start,
+		Duration:   time.Since(start),
+		Metadata: map[string]interface{}{
+			"operation": operationName,
+			"params":    params,
+		},
+	}, fmt.Errorf("operation execution not implemented yet")
+}
+
+// ExecuteBatchOperation executes batch operations
+// Выполняет пакетные операции
+func (c *Core) ExecuteBatchOperation(operations []string, params []types.Variables) (*types.BatchOperationResult, error) {
+	start := time.Now()
+	results := make([]types.OperationResult, 0, len(operations))
+	successCount := int32(0)
+
+	for i, op := range operations {
+		var opParams types.Variables
+		if i < len(params) {
+			opParams = params[i]
+		} else {
+			opParams = make(types.Variables)
+		}
+
+		result, _ := c.ExecuteOperation(op, opParams)
+		if result.Success {
+			successCount++
+		}
+		results = append(results, *result)
+	}
+
+	return &types.BatchOperationResult{
+		TotalCount:   int32(len(operations)),
+		SuccessCount: successCount,
+		FailureCount: int32(len(operations)) - successCount,
+		Results:      results,
+		ExecutedAt:   start,
+		Duration:     time.Since(start),
+	}, nil
+}
+
+// Helper methods for gathering system information
+// Вспомогательные методы для сбора системной информации
+
+func (c *Core) gatherComponentsInfo() []types.ComponentInfo {
+	components := make([]types.ComponentInfo, 0)
+	now := time.Now()
+
+	// Storage component
+	if c.storage != nil {
+		comp := types.ComponentInfo{
+			Name:        "storage",
+			Type:        types.ComponentTypeStorage,
+			Status:      types.ComponentStatusRunning,
+			Health:      types.ComponentHealthHealthy,
+			Description: "BadgerDB storage component",
+			IsEnabled:   true,
+			ReadyFlag:   true,
+			StartedAt:   &c.startTime,
+			Uptime:      &[]time.Duration{now.Sub(c.startTime)}[0],
+		}
+		components = append(components, comp)
+	}
+
+	// Process component
+	if c.processComp != nil {
+		comp := types.ComponentInfo{
+			Name:        "process",
+			Type:        types.ComponentTypeProcess,
+			Status:      types.ComponentStatusRunning,
+			Health:      types.ComponentHealthHealthy,
+			Description: "BPMN process execution component",
+			IsEnabled:   true,
+			ReadyFlag:   true,
+			StartedAt:   &c.startTime,
+			Uptime:      &[]time.Duration{now.Sub(c.startTime)}[0],
+		}
+		components = append(components, comp)
+	}
+
+	// Messages component
+	if c.messagesComp != nil {
+		comp := types.ComponentInfo{
+			Name:        "messages",
+			Type:        types.ComponentTypeMessages,
+			Status:      types.ComponentStatusRunning,
+			Health:      types.ComponentHealthHealthy,
+			Description: "Message correlation component",
+			IsEnabled:   true,
+			ReadyFlag:   true,
+			StartedAt:   &c.startTime,
+			Uptime:      &[]time.Duration{now.Sub(c.startTime)}[0],
+		}
+		components = append(components, comp)
+	}
+
+	// Jobs component
+	if c.jobsComp != nil {
+		comp := types.ComponentInfo{
+			Name:        "jobs",
+			Type:        types.ComponentTypeJobs,
+			Status:      types.ComponentStatusRunning,
+			Health:      types.ComponentHealthHealthy,
+			Description: "Job management component",
+			IsEnabled:   true,
+			ReadyFlag:   true,
+			StartedAt:   &c.startTime,
+			Uptime:      &[]time.Duration{now.Sub(c.startTime)}[0],
+		}
+		components = append(components, comp)
+	}
+
+	// Expression component
+	if c.expressionComp != nil {
+		comp := types.ComponentInfo{
+			Name:        "expression",
+			Type:        types.ComponentTypeExpression,
+			Status:      types.ComponentStatusRunning,
+			Health:      types.ComponentHealthHealthy,
+			Description: "Expression evaluation component",
+			IsEnabled:   true,
+			ReadyFlag:   true,
+			StartedAt:   &c.startTime,
+			Uptime:      &[]time.Duration{now.Sub(c.startTime)}[0],
+		}
+		components = append(components, comp)
+	}
+
+	// Incidents component
+	if c.incidentsComp != nil {
+		comp := types.ComponentInfo{
+			Name:        "incidents",
+			Type:        types.ComponentTypeIncidents,
+			Status:      types.ComponentStatusRunning,
+			Health:      types.ComponentHealthHealthy,
+			Description: "Incident management component",
+			IsEnabled:   true,
+			ReadyFlag:   true,
+			StartedAt:   &c.startTime,
+			Uptime:      &[]time.Duration{now.Sub(c.startTime)}[0],
+		}
+		components = append(components, comp)
+	}
+
+	return components
+}
+
+func (c *Core) gatherSystemMetrics() types.SystemMetrics {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
+	return types.SystemMetrics{
+		TotalRequests:       0, // TODO: implement request counting
+		TotalErrors:         0, // TODO: implement error counting
+		ErrorRate:           0,
+		AverageResponseTime: 0, // TODO: implement response time tracking
+		RequestsPerSecond:   0, // TODO: implement RPS tracking
+		MemoryUsage:         int64(memStats.Alloc),
+		CPUUsage:            0, // TODO: implement CPU usage tracking
+		DiskUsage:           0, // TODO: implement disk usage tracking
+		NetworkIn:           0, // TODO: implement network stats
+		NetworkOut:          0, // TODO: implement network stats
+		ActiveConnections:   0, // TODO: implement connection counting
+		Goroutines:          int32(runtime.NumGoroutine()),
+	}
+}
+
+func (c *Core) getSystemConfiguration() map[string]interface{} {
+	config := make(map[string]interface{})
+
+	if c.config != nil {
+		config["instance_name"] = c.config.InstanceName
+		config["grpc_port"] = c.config.GRPC.Port
+		config["rest_port"] = c.config.RestAPI.Port
+		config["storage_path"] = c.config.Database.Path
+		config["log_level"] = c.config.Logger.Level
+		config["base_path"] = c.config.BasePath
+	}
+
+	return config
 }
