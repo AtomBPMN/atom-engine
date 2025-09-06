@@ -44,11 +44,6 @@ type ComponentInterface interface {
 	// Helper access
 	// Доступ к хелперам
 	GetEvaluationHelper() *EvaluationHelper
-	GetConnectorEvaluator() *ConnectorExpressionEvaluator
-	GetVariableEvaluator() *VariableEvaluator
-	GetConditionEvaluator() *ConditionEvaluator
-	GetEngineEvaluator() *EngineEvaluator
-	GetRetriesParser() *RetriesParser
 }
 
 // NewComponent creates new expression component
@@ -166,49 +161,4 @@ func (c *Component) ParseRetries(retriesStr string) (int, error) {
 // Возвращает хелпер оценки
 func (c *Component) GetEvaluationHelper() *EvaluationHelper {
 	return c.evaluationHelper
-}
-
-// GetConnectorEvaluator returns connector expression evaluator
-// Возвращает обработчик выражений для коннекторов
-func (c *Component) GetConnectorEvaluator() *ConnectorExpressionEvaluator {
-	if c.evaluator == nil {
-		return nil
-	}
-	return c.evaluator.GetConnectorEvaluator()
-}
-
-// GetVariableEvaluator returns variable evaluator
-// Возвращает оценщик переменных
-func (c *Component) GetVariableEvaluator() *VariableEvaluator {
-	if c.evaluator == nil {
-		return nil
-	}
-	return c.evaluator.GetVariableEvaluator()
-}
-
-// GetConditionEvaluator returns condition evaluator
-// Возвращает оценщик условий
-func (c *Component) GetConditionEvaluator() *ConditionEvaluator {
-	if c.evaluator == nil {
-		return nil
-	}
-	return c.evaluator.GetConditionEvaluator()
-}
-
-// GetEngineEvaluator returns engine evaluator
-// Возвращает движок выражений
-func (c *Component) GetEngineEvaluator() *EngineEvaluator {
-	if c.evaluator == nil {
-		return nil
-	}
-	return c.evaluator.GetEngineEvaluator()
-}
-
-// GetRetriesParser returns retries parser
-// Возвращает парсер повторов
-func (c *Component) GetRetriesParser() *RetriesParser {
-	if c.evaluator == nil {
-		return nil
-	}
-	return c.evaluator.GetRetriesParser()
 }

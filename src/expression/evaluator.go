@@ -28,12 +28,16 @@ type ExpressionEvaluator struct {
 func NewExpressionEvaluator() *ExpressionEvaluator {
 	logger := logger.NewComponentLogger("expression-evaluator")
 
+	// Create shared VariableEvaluator
+	// Создаем общий VariableEvaluator
+	variableEvaluator := NewVariableEvaluator(logger)
+
 	return &ExpressionEvaluator{
 		logger:             logger,
-		variableEvaluator:  NewVariableEvaluator(logger),
-		conditionEvaluator: NewConditionEvaluator(logger),
-		retriesParser:      NewRetriesParser(logger),
-		engineEvaluator:    NewEngineEvaluator(logger),
+		variableEvaluator:  variableEvaluator,
+		conditionEvaluator: NewConditionEvaluatorWithVariableEvaluator(logger, variableEvaluator),
+		retriesParser:      NewRetriesParserWithVariableEvaluator(logger, variableEvaluator),
+		engineEvaluator:    NewEngineEvaluatorWithVariableEvaluator(logger, variableEvaluator),
 		connectorEvaluator: NewConnectorExpressionEvaluator(logger),
 	}
 }

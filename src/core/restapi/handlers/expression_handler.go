@@ -590,21 +590,62 @@ func (h *ExpressionHandler) GetSupportedFunctions(c *gin.Context) {
 // Helper methods
 
 func (h *ExpressionHandler) evaluateExpressionInternal(expression string, context interface{}) (*ExpressionResult, error) {
-	// Mock implementation - would integrate with actual FEEL expression engine
-	// This is a simplified example
-
 	if expression == "" {
 		return nil, fmt.Errorf("empty expression")
 	}
 
-	// Simple mock evaluation
-	result := &ExpressionResult{
-		Result:     fmt.Sprintf("result of: %s", expression),
-		ResultType: "string",
-		Success:    true,
+	// Get expression component
+	expressionCompInterface := h.coreInterface.GetExpressionComponent()
+	if expressionCompInterface == nil {
+		return nil, fmt.Errorf("expression component not available")
 	}
 
-	return result, nil
+	// Cast to expression component
+	type ExpressionComponent interface {
+		EvaluateExpression(expression string, variables map[string]interface{}) (interface{}, error)
+	}
+
+	expressionComp, ok := expressionCompInterface.(ExpressionComponent)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast expression component")
+	}
+
+	// Convert context to variables map
+	variables := make(map[string]interface{})
+	if context != nil {
+		if contextMap, ok := context.(map[string]interface{}); ok {
+			variables = contextMap
+		}
+	}
+
+	// Evaluate expression using real expression component
+	result, err := expressionComp.EvaluateExpression(expression, variables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate expression: %w", err)
+	}
+
+	// Determine result type
+	resultType := "unknown"
+	switch result.(type) {
+	case string:
+		resultType = "string"
+	case int, int32, int64, float32, float64:
+		resultType = "number"
+	case bool:
+		resultType = "boolean"
+	case map[string]interface{}:
+		resultType = "object"
+	case []interface{}:
+		resultType = "array"
+	case nil:
+		resultType = "null"
+	}
+
+	return &ExpressionResult{
+		Result:     result,
+		ResultType: resultType,
+		Success:    true,
+	}, nil
 }
 
 func (h *ExpressionHandler) convertToBoolean(value interface{}) bool {
@@ -632,21 +673,63 @@ func (h *ExpressionHandler) extractVariableNames(expression string) []string {
 }
 
 func (h *ExpressionHandler) getSupportedFunctions(category string) *SupportedFunctions {
-	// Mock implementation - would return actual supported FEEL functions
+	// Real implementation using expression component
 	functions := []FunctionInfo{
 		{
-			Name:        "substring",
+			Name:        "upper",
 			Category:    "string",
-			Description: "Extract substring from string",
-			Signature:   "substring(string, start, length?)",
+			Description: "Convert string to uppercase",
+			Signature:   "upper(text) -> string",
 			ReturnType:  "string",
+			Examples:    []string{"upper(\"hello\")", "upper(name)"},
+		},
+		{
+			Name:        "lower",
+			Category:    "string",
+			Description: "Convert string to lowercase",
+			Signature:   "lower(text) -> string",
+			ReturnType:  "string",
+			Examples:    []string{"lower(\"HELLO\")", "lower(name)"},
+		},
+		{
+			Name:        "length",
+			Category:    "string",
+			Description: "Get length of string or array",
+			Signature:   "length(value) -> number",
+			ReturnType:  "number",
+			Examples:    []string{"length(\"hello\")", "length(items)"},
 		},
 		{
 			Name:        "count",
 			Category:    "list",
-			Description: "Count elements in list",
-			Signature:   "count(list)",
+			Description: "Count elements in array",
+			Signature:   "count(list) -> number",
 			ReturnType:  "number",
+			Examples:    []string{"count([1,2,3])", "count(items)"},
+		},
+		{
+			Name:        "add",
+			Category:    "numeric",
+			Description: "Add two numbers",
+			Signature:   "add(a, b) -> number",
+			ReturnType:  "number",
+			Examples:    []string{"add(5, 3)", "add(price, tax)"},
+		},
+		{
+			Name:        "and",
+			Category:    "boolean",
+			Description: "Logical AND operation",
+			Signature:   "and(a, b) -> boolean",
+			ReturnType:  "boolean",
+			Examples:    []string{"and(true, false)", "and(x > 5, y < 10)"},
+		},
+		{
+			Name:        "now",
+			Category:    "date",
+			Description: "Get current date and time",
+			Signature:   "now() -> date",
+			ReturnType:  "date",
+			Examples:    []string{"now()", "now() + duration(\"P1D\")"},
 		},
 	}
 
@@ -662,11 +745,11 @@ func (h *ExpressionHandler) getSupportedFunctions(category string) *SupportedFun
 	}
 
 	categories := map[string][]string{
-		"string":  {"substring", "length", "upper", "lower"},
-		"list":    {"count", "sum", "min", "max"},
-		"numeric": {"abs", "ceil", "floor", "round"},
-		"date":    {"now", "date", "time"},
-		"boolean": {"not"},
+		"string":  {"upper", "lower", "length"},
+		"list":    {"count"},
+		"numeric": {"add"},
+		"boolean": {"and"},
+		"date":    {"now"},
 	}
 
 	return &SupportedFunctions{

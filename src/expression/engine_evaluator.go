@@ -32,81 +32,44 @@ func NewEngineEvaluator(logger logger.ComponentLogger) *EngineEvaluator {
 	}
 }
 
+// NewEngineEvaluatorWithVariableEvaluator creates new expression engine with shared VariableEvaluator
+// Создает новый движок выражений с общим VariableEvaluator
+func NewEngineEvaluatorWithVariableEvaluator(logger logger.ComponentLogger, variableEvaluator *VariableEvaluator) *EngineEvaluator {
+	return &EngineEvaluator{
+		logger:            logger,
+		variableEvaluator: variableEvaluator,
+	}
+}
+
 // EvaluateExpressionEngine full expression engine
 // Полноценный движок выражений
 func (ee *EngineEvaluator) EvaluateExpressionEngine(expression interface{}, variables map[string]interface{}) (interface{}, error) {
 	switch expr := expression.(type) {
 	case string:
-		// Process string expressions
-		// Обработка строковых выражений
-		if strings.HasPrefix(expr, "${") && strings.HasSuffix(expr, "}") {
-			varName := strings.TrimSuffix(strings.TrimPrefix(expr, "${"), "}")
-			if value, exists := variables[varName]; exists {
-				ee.logger.Debug("Engine variable found",
-					logger.String("variable", varName),
-					logger.Any("value", value))
-				return value, nil
-			}
-			ee.logger.Warn("Engine variable not found",
-				logger.String("variable", varName))
-			return expr, nil
+		// Use VariableEvaluator for all string expression processing
+		// Используем VariableEvaluator для всей обработки строковых выражений
+		result, err := ee.variableEvaluator.EvaluateVariable(expr, variables)
+		if err != nil {
+			return expr, err
 		}
 
-		// Handle Camunda-style expressions #{variable}
-		// Обрабатываем выражения в стиле Camunda #{variable}
-		if strings.HasPrefix(expr, "#{") && strings.HasSuffix(expr, "}") {
-			varName := strings.TrimSuffix(strings.TrimPrefix(expr, "#{"), "}")
-			if value, exists := variables[varName]; exists {
-				ee.logger.Debug("Engine Camunda variable found",
-					logger.String("variable", varName),
-					logger.Any("value", value))
-				return value, nil
-			}
-			ee.logger.Warn("Engine Camunda variable not found",
-				logger.String("variable", varName))
-			return expr, nil
-		}
-
-		// Handle FEEL expressions starting with "="
-		// Обрабатываем FEEL выражения начинающиеся с "="
-		if strings.HasPrefix(expr, "=") {
-			feelExpr := expr[1:] // Remove "="
-			// For now, handle simple variable access
-			// Пока обрабатываем простой доступ к переменным
-			if value, exists := variables[feelExpr]; exists {
-				ee.logger.Debug("Engine FEEL variable found",
-					logger.String("variable", feelExpr),
-					logger.Any("value", value))
-
-				// If value is JSON string, try to parse it
-				// Если значение это JSON строка, пытаемся её распарсить
-				if strValue, ok := value.(string); ok {
-					// Check if it looks like JSON (starts with { or [)
-					if (strings.HasPrefix(strValue, "{") && strings.HasSuffix(strValue, "}")) ||
-						(strings.HasPrefix(strValue, "[") && strings.HasSuffix(strValue, "]")) {
-						var jsonValue interface{}
-						if err := json.Unmarshal([]byte(strValue), &jsonValue); err == nil {
-							ee.logger.Debug("Engine parsed JSON variable",
-								logger.String("variable", feelExpr),
-								logger.Any("parsed_value", jsonValue))
-							return jsonValue, nil
-						}
-						ee.logger.Debug("Engine failed to parse JSON, returning as string",
-							logger.String("variable", feelExpr),
-							logger.String("json_string", strValue))
-					}
+		// If result is still string and looks like JSON, try to parse it
+		// Если результат все еще строка и похож на JSON, пытаемся распарсить
+		if strResult, ok := result.(string); ok && strResult != expr {
+			if (strings.HasPrefix(strResult, "{") && strings.HasSuffix(strResult, "}")) ||
+				(strings.HasPrefix(strResult, "[") && strings.HasSuffix(strResult, "]")) {
+				var jsonValue interface{}
+				if err := json.Unmarshal([]byte(strResult), &jsonValue); err == nil {
+					ee.logger.Debug("Engine parsed JSON from variable",
+						logger.Any("parsed_value", jsonValue))
+					return jsonValue, nil
 				}
-
-				return value, nil
 			}
-			ee.logger.Debug("Engine FEEL expression as literal",
-				logger.String("expression", feelExpr))
-			return feelExpr, nil
 		}
 
-		ee.logger.Debug("Engine string literal",
-			logger.String("value", expr))
-		return expr, nil
+		ee.logger.Debug("Engine string processed",
+			logger.Any("result", result))
+		return result, nil
 
 	case int, int32, int64:
 		ee.logger.Debug("Engine integer",

@@ -31,6 +31,15 @@ func NewConditionEvaluator(logger logger.ComponentLogger) *ConditionEvaluator {
 	}
 }
 
+// NewConditionEvaluatorWithVariableEvaluator creates new condition processor with shared VariableEvaluator
+// Создает новый обработчик условий с общим VariableEvaluator
+func NewConditionEvaluatorWithVariableEvaluator(logger logger.ComponentLogger, variableEvaluator *VariableEvaluator) *ConditionEvaluator {
+	return &ConditionEvaluator{
+		logger:            logger,
+		variableEvaluator: variableEvaluator,
+	}
+}
+
 // EvaluateCondition evaluates conditional expression
 // Вычисляет условное выражение
 func (ce *ConditionEvaluator) EvaluateCondition(variables map[string]interface{}, condition string) (bool, error) {

@@ -61,6 +61,23 @@ func (ve *VariableEvaluator) EvaluateVariable(expression string, variables map[s
 		return expression, nil
 	}
 
+	// Handle FEEL expressions starting with "="
+	// Обрабатываем FEEL выражения начинающиеся с "="
+	if strings.HasPrefix(expression, "=") {
+		feelExpr := expression[1:] // Remove "="
+		// Handle simple variable access in FEEL
+		// Обрабатываем простой доступ к переменным в FEEL
+		if value, exists := variables[feelExpr]; exists {
+			ve.logger.Debug("FEEL variable found",
+				logger.String("variable", feelExpr),
+				logger.Any("value", value))
+			return value, nil
+		}
+		ve.logger.Debug("FEEL expression as literal",
+			logger.String("expression", feelExpr))
+		return feelExpr, nil
+	}
+
 	// Handle simple variable name without brackets
 	// Обрабатываем простое имя переменной без скобок
 	if ve.isSimpleVariableName(expression) {
