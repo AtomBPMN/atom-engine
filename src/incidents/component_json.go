@@ -229,8 +229,8 @@ func (c *Component) sendResponse(response string) {
 // ProcessMessage processes JSON message
 // Обрабатывает JSON сообщение
 func (c *Component) ProcessMessage(ctx context.Context, messageJSON string) error {
-	if !c.IsReady() {
-		return fmt.Errorf("incidents component is not ready")
+	if err := c.checkReady(); err != nil {
+		return err
 	}
 
 	// Send message to processing channel

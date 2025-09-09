@@ -11,6 +11,7 @@ package incidents
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Helper functions for type conversion and data manipulation
@@ -231,47 +232,6 @@ func (im *IncidentManager) categorizeErrorCode(errorCode string) string {
 	}
 }
 
-// buildIncidentSummary builds a human-readable summary of the incident
-// Создает читаемое человеком резюме инцидента
-func (im *IncidentManager) buildIncidentSummary(incident *Incident) string {
-	summary := fmt.Sprintf("%s in ", incident.GetDisplayName())
-
-	if incident.ProcessInstanceID != "" {
-		summary += fmt.Sprintf("process %s", incident.ProcessInstanceID)
-	} else {
-		summary += "system"
-	}
-
-	if incident.ElementID != "" {
-		summary += fmt.Sprintf(" at element %s", incident.ElementID)
-	}
-
-	if incident.ErrorCode != "" {
-		summary += fmt.Sprintf(" (error: %s)", incident.ErrorCode)
-	}
-
-	return summary
-}
-
-// extractContextFromMetadata extracts relevant context from incident metadata
-// Извлекает релевантный контекст из метаданных инцидента
-func (im *IncidentManager) extractContextFromMetadata(incident *Incident) map[string]string {
-	context := make(map[string]string)
-
-	if incident.Metadata == nil {
-		return context
-	}
-
-	// Extract string values from metadata
-	for key, value := range incident.Metadata {
-		if strValue, ok := value.(string); ok {
-			context[key] = strValue
-		}
-	}
-
-	return context
-}
-
 // sanitizeIncidentData sanitizes incident data for safe storage/transmission
 // Очищает данные инцидента для безопасного хранения/передачи
 func (im *IncidentManager) sanitizeIncidentData(incident *Incident) {
@@ -292,8 +252,8 @@ func (im *IncidentManager) sanitizeIncidentData(incident *Incident) {
 		}
 	}
 
-	// Ensure error code is uppercase
+	// Ensure error code is not empty and trim whitespace
 	if incident.ErrorCode != "" {
-		// Keep original case for now, as error codes can be case-sensitive
+		incident.ErrorCode = strings.TrimSpace(incident.ErrorCode)
 	}
 }

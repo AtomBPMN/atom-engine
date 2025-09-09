@@ -207,25 +207,6 @@ func (im *IncidentManager) ResolveByProcessInstance(ctx context.Context, process
 	return resolvedIncidents, nil
 }
 
-// AutoResolveExpiredIncidents automatically resolves incidents based on rules
-// Автоматически разрешает просроченные инциденты на основе правил
-func (im *IncidentManager) AutoResolveExpiredIncidents(ctx context.Context) error {
-	im.logger.Info("Starting auto-resolution of expired incidents")
-
-	// This is a placeholder for auto-resolution logic
-	// In a real implementation, you would:
-	// 1. Define rules for auto-resolution (age, type, retry count, etc.)
-	// 2. Query incidents matching those rules
-	// 3. Auto-resolve them with appropriate actions
-
-	// Example: Auto-dismiss system errors older than 7 days
-	// Example: Auto-retry job failures with specific error patterns
-	// Example: Auto-dismiss expression errors in non-critical processes
-
-	im.logger.Info("Auto-resolution completed (placeholder)")
-	return nil
-}
-
 // updateJobRetries updates job retries through core interface
 // Обновляет retries job через интерфейс core
 func (im *IncidentManager) updateJobRetries(ctx context.Context, jobKey string, newRetries int) error {
