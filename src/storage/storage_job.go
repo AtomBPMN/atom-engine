@@ -22,50 +22,24 @@ import (
 
 // SaveJob saves job to storage
 func (bs *BadgerStorage) SaveJob(ctx context.Context, job *models.Job) error {
-	if bs.db == nil {
-		return fmt.Errorf("database not initialized")
-	}
-
-	data, err := json.Marshal(job)
-	if err != nil {
-		return fmt.Errorf("failed to marshal job: %w", err)
-	}
-
 	key := fmt.Sprintf("job:%s", job.ID)
-	return bs.db.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(key), data)
-	})
+	return bs.saveJSON(key, job)
 }
 
 // GetJob gets job from storage
 func (bs *BadgerStorage) GetJob(ctx context.Context, jobID string) (*models.Job, error) {
-	if bs.db == nil {
-		return nil, fmt.Errorf("database not initialized")
-	}
-
 	key := fmt.Sprintf("job:%s", jobID)
-	var job *models.Job
+	var job models.Job
 
-	err := bs.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(key))
-		if err != nil {
-			if err == badger.ErrKeyNotFound {
-				return nil // Job not found
-			}
-			return err
-		}
-
-		return item.Value(func(val []byte) error {
-			job = &models.Job{}
-			return json.Unmarshal(val, job)
-		})
-	})
-
+	err := bs.loadJSON(key, &job)
 	if err != nil {
+		if err.Error() == fmt.Sprintf("key not found: %s", key) {
+			return nil, nil // Job not found
+		}
 		return nil, fmt.Errorf("failed to get job: %w", err)
 	}
 
-	return job, nil
+	return &job, nil
 }
 
 // ListJobsByType lists jobs by type and status

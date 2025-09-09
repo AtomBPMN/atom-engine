@@ -16,14 +16,6 @@ import (
 	"atom-engine/src/core/models"
 )
 
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // processJobsResponses processes jobs responses in background
 // Обрабатывает ответы jobs в фоне
 func (c *Core) processJobsResponses() {
@@ -36,55 +28,11 @@ func (c *Core) processJobsResponses() {
 	for {
 		select {
 		case response := <-responseChannel:
-			// Route message by type - only handle job callbacks, not API responses
-			// Роутим сообщения по типу - обрабатываем только job callbacks, не API ответы
-			if c.isJobCallback(response) {
-				c.handleJobsResponse(response)
-			} else {
-				// This is an API response - ignore it, let WaitForJobsResponse handle it
-				// Это API ответ - игнорируем, пусть WaitForJobsResponse его обрабатывает
-				logger.Debug("Ignoring API response in jobs processor",
-					logger.String("response_prefix", response[:min(len(response), 100)]))
-			}
+			// Process all job responses - simplified logic
+			// Обрабатываем все ответы jobs - упрощенная логика
+			c.handleJobsResponse(response)
 		}
 	}
-}
-
-// isJobCallback determines if a response is a job callback (not an API response)
-// Определяет является ли ответ job callback'ом (не API ответом)
-func (c *Core) isJobCallback(response string) bool {
-	// Simple heuristic: job callbacks typically contain "job_completed" or similar
-	// API responses contain "response" in type field
-	// Простая эвристика: job callback'и обычно содержат "job_completed" или похожее
-	// API ответы содержат "response" в поле type
-	return len(response) > 0 &&
-		!contains(response, "_response") &&
-		(contains(response, "job_completed") || contains(response, "job_failed"))
-}
-
-// contains checks if string s contains substring substr
-// Проверяет содержит ли строка s подстроку substr
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		findInString(s, substr) != -1
-}
-
-// findInString finds substring in string (simple implementation)
-// Находит подстроку в строке (простая реализация)
-func findInString(s, substr string) int {
-	if len(substr) == 0 {
-		return 0
-	}
-	if len(s) < len(substr) {
-		return -1
-	}
-
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }
 
 // handleJobsResponse handles single jobs response

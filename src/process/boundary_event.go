@@ -226,10 +226,58 @@ func (bee *BoundaryEventExecutor) handleSignalBoundaryEvent(token *models.Token,
 		logger.String("element_id", token.CurrentElementID),
 		logger.Bool("cancel_activity", cancelActivity))
 
-	// Signal subscription not implemented
-	// Подписка на сигнал не реализована
-	logger.Info("Signal boundary event - signal subscription not yet implemented")
+	// Extract signal name from event definition
+	signalName := ""
+	if signalRef, exists := eventDef["signal_ref"]; exists {
+		if signalRefStr, ok := signalRef.(string); ok {
+			signalName = signalRefStr
+		}
+	}
 
+	// Fallback: use element ID as signal name if no signal_ref
+	if signalName == "" {
+		signalName = token.CurrentElementID + "_signal"
+		logger.Warn("No signal_ref found, using element ID as signal name",
+			logger.String("signal_name", signalName))
+	}
+
+	// Subscribe to signal using process component
+	if bee.processComponent != nil {
+		variables := make(map[string]interface{})
+		if token.Variables != nil {
+			variables = token.Variables
+		}
+
+		err := bee.processComponent.SubscribeToSignal(signalName, token.TokenID, token.CurrentElementID, cancelActivity, variables)
+		if err != nil {
+			logger.Error("Failed to subscribe to signal",
+				logger.String("signal_name", signalName),
+				logger.String("token_id", token.TokenID),
+				logger.String("error", err.Error()))
+			return &ExecutionResult{
+				Success:   false,
+				Error:     fmt.Sprintf("failed to subscribe to signal: %v", err),
+				Completed: false,
+			}, err
+		}
+
+		logger.Info("Successfully subscribed to signal",
+			logger.String("signal_name", signalName),
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID))
+
+		// Return waiting state - signal will trigger via callback when received
+		return &ExecutionResult{
+			Success:      true,
+			TokenUpdated: false,
+			NextElements: []string{},
+			WaitingFor:   fmt.Sprintf("signal:%s", signalName),
+			Completed:    false,
+		}, nil
+	}
+
+	// Fallback if no process component available
+	logger.Warn("Process component not available, treating as regular boundary event")
 	return bee.executeRegularBoundaryEvent(token, element, cancelActivity)
 }
 

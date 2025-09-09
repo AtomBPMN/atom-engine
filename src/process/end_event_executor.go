@@ -9,6 +9,8 @@ This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
 package process
 
 import (
+	"fmt"
+
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
 )
@@ -219,9 +221,43 @@ func (ee *EndEventExecutor) handleSignalEndEvent(token *models.Token, element ma
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID))
 
-	// Signal broadcasting not implemented
-	// Broadcasting сигнала не реализован
-	logger.Info("Signal end event - broadcasting not yet implemented")
+	// Extract signal name from event definition
+	signalName := ""
+	if signalRef, exists := eventDef["signal_ref"]; exists {
+		if signalRefStr, ok := signalRef.(string); ok {
+			signalName = signalRefStr
+		}
+	}
+
+	// Fallback: use element ID as signal name if no signal_ref
+	if signalName == "" {
+		signalName = token.CurrentElementID + "_signal"
+		logger.Warn("No signal_ref found, using element ID as signal name",
+			logger.String("signal_name", signalName))
+	}
+
+	// Broadcast signal using process component
+	if ee.processComponent != nil {
+		variables := make(map[string]interface{})
+		if token.Variables != nil {
+			variables = token.Variables
+		}
+
+		err := ee.processComponent.BroadcastSignal(signalName, variables)
+		if err != nil {
+			logger.Error("Failed to broadcast signal from end event",
+				logger.String("signal_name", signalName),
+				logger.String("token_id", token.TokenID),
+				logger.String("error", err.Error()))
+			// Continue execution even if broadcast fails
+		} else {
+			logger.Info("Successfully broadcast signal from end event",
+				logger.String("signal_name", signalName),
+				logger.String("token_id", token.TokenID))
+		}
+	} else {
+		logger.Warn("Process component not available, cannot broadcast signal")
+	}
 
 	return &ExecutionResult{
 		Success:      true,
@@ -238,9 +274,124 @@ func (ee *EndEventExecutor) handleErrorEndEvent(token *models.Token, element map
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID))
 
-	// Error propagation not implemented
-	// ТОДО: Реализовать распространение ошибки
-	logger.Info("Error end event - error propagation not yet implemented")
+	// Extract error code and message from event definition
+	errorCode := "GENERAL_ERROR" // Default error code
+	errorMessage := "Error end event triggered"
+
+	if errorRef, exists := eventDef["error_ref"]; exists {
+		if errorRefStr, ok := errorRef.(string); ok {
+			errorCode = errorRefStr
+		}
+	}
+
+	// Check for error message in variables or element name
+	if token.Variables != nil {
+		if errMsg, exists := token.Variables["errorMessage"]; exists {
+			if errMsgStr, ok := errMsg.(string); ok {
+				errorMessage = errMsgStr
+			}
+		}
+	}
+
+	// Use element name as error message if available
+	if elementName, exists := element["name"].(string); exists && elementName != "" {
+		errorMessage = elementName
+	}
+
+	logger.Info("Error end event propagating error",
+		logger.String("token_id", token.TokenID),
+		logger.String("error_code", errorCode),
+		logger.String("error_message", errorMessage))
+
+	// Check for error boundary events in process component
+	if ee.processComponent != nil {
+		errorBoundary := ee.processComponent.FindMatchingErrorBoundary(token.TokenID, errorCode)
+		if errorBoundary != nil {
+			logger.Info("Found matching error boundary for error end event",
+				logger.String("token_id", token.TokenID),
+				logger.String("error_boundary_id", errorBoundary.ElementID),
+				logger.String("error_code", errorCode))
+
+			// Remove error boundary subscription
+			ee.processComponent.RemoveErrorBoundariesForToken(token.TokenID)
+
+			// Cancel current token and activate error boundary
+			token.SetState(models.TokenStateCanceled)
+			if err := ee.processComponent.UpdateToken(token); err != nil {
+				logger.Error("Failed to update canceled token",
+					logger.String("token_id", token.TokenID),
+					logger.String("error", err.Error()))
+			}
+
+			// Create new token for error boundary flow
+			return ee.activateErrorBoundaryFlow(token, errorBoundary, errorCode, errorMessage)
+		}
+	}
+
+	// No error boundary found - this is unhandled error
+	logger.Warn("No error boundary found for error end event, treating as unhandled error",
+		logger.String("token_id", token.TokenID),
+		logger.String("error_code", errorCode))
+
+	// Mark token as failed with error info
+	token.SetState(models.TokenStateFailed)
+	if token.Variables == nil {
+		token.Variables = make(map[string]interface{})
+	}
+	token.Variables["errorCode"] = errorCode
+	token.Variables["errorMessage"] = errorMessage
+
+	return &ExecutionResult{
+		Success:   false,
+		Error:     fmt.Sprintf("BPMN Error %s: %s", errorCode, errorMessage),
+		Completed: true,
+	}, fmt.Errorf("BPMN Error %s: %s", errorCode, errorMessage)
+}
+
+// activateErrorBoundaryFlow activates error boundary flow from error end event
+// Активирует поток граничного события ошибки из error end event
+func (ee *EndEventExecutor) activateErrorBoundaryFlow(originalToken *models.Token, errorBoundary *ErrorBoundarySubscription, errorCode, errorMessage string) (*ExecutionResult, error) {
+	logger.Info("Activating error boundary flow from error end event",
+		logger.String("original_token_id", originalToken.TokenID),
+		logger.String("boundary_element_id", errorBoundary.ElementID),
+		logger.String("error_code", errorCode),
+		logger.Int("outgoing_flows_count", len(errorBoundary.OutgoingFlows)))
+
+	// Prepare variables for error boundary
+	variables := make(map[string]interface{})
+	if originalToken.Variables != nil {
+		for k, v := range originalToken.Variables {
+			variables[k] = v
+		}
+	}
+	variables["errorCode"] = errorCode
+	variables["errorMessage"] = errorMessage
+
+	// Continue execution with outgoing flows from error boundary event
+	if len(errorBoundary.OutgoingFlows) > 0 {
+		logger.Info("Error boundary has outgoing flows, continuing execution",
+			logger.String("boundary_element_id", errorBoundary.ElementID),
+			logger.Int("flows_count", len(errorBoundary.OutgoingFlows)))
+
+		// Create new tokens for outgoing flows
+		nextElements := make([]string, 0, len(errorBoundary.OutgoingFlows))
+		for _, flow := range errorBoundary.OutgoingFlows {
+			nextElements = append(nextElements, flow)
+		}
+
+		// Update original token variables
+		originalToken.SetVariables(variables)
+
+		return &ExecutionResult{
+			Success:      true,
+			TokenUpdated: true,
+			NextElements: nextElements,
+			Completed:    false,
+		}, nil
+	}
+
+	logger.Info("Error boundary event has no outgoing flows - process ends",
+		logger.String("boundary_element_id", errorBoundary.ElementID))
 
 	return &ExecutionResult{
 		Success:      true,

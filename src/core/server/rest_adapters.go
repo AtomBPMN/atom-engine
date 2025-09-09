@@ -30,9 +30,6 @@ func (c *Core) GetProcessComponentForREST() handlers.ProcessComponentInterface {
 // GetTimewheelComponentForREST returns timewheel component adapted for REST API
 func (c *Core) GetTimewheelComponentForREST() handlers.TimewheelComponentInterface {
 	grpcComp := c.GetTimewheelComponent()
-	if grpcComp == nil {
-		return nil
-	}
 	return &timewheelComponentRESTAdapter{grpcComp: grpcComp}
 }
 

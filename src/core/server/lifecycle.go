@@ -183,6 +183,13 @@ func (c *Core) Start() error {
 		return fmt.Errorf("failed to start auth component: %w", err)
 	}
 
+	// Set storage for auth component after both storage and auth are ready
+	// Устанавливаем storage для auth компонента после того, как и storage и auth готовы
+	if err := c.authComp.SetStorage(c.storage); err != nil {
+		logger.Error("Failed to set storage for auth component", logger.String("error", err.Error()))
+		return fmt.Errorf("failed to set storage for auth component: %w", err)
+	}
+
 	// Log startup event
 	err = c.storage.LogSystemEvent(models.EventTypeStartup, models.StatusInProgress, "Starting Atom Engine")
 	if err != nil {

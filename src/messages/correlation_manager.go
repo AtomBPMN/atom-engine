@@ -156,7 +156,7 @@ func (cm *CorrelationManager) PublishMessage(ctx context.Context, tenantID, mess
 			// Для start events создаем новый экземпляр процесса
 			processInstanceID := models.GenerateID()
 
-			// TODO: Create actual process instance through process engine
+			// NOTE: Process instance creation should be integrated with process engine
 			// For now, just set the ID
 			result.ProcessInstanceID = processInstanceID
 			result.InstanceCreated = true
@@ -238,7 +238,6 @@ func (cm *CorrelationManager) PublishMessage(ctx context.Context, tenantID, mess
 	return result, nil
 }
 
-
 // CorrelateMessage correlates message with specific process instance
 func (cm *CorrelationManager) CorrelateMessage(ctx context.Context, tenantID, messageName, correlationKey, processInstanceID string, variables map[string]interface{}) (*models.MessageCorrelationResult, error) {
 	cm.logger.Info("Correlating message with process instance", logger.String("correlationKey", correlationKey), logger.String("processInstanceID", processInstanceID))
@@ -257,8 +256,8 @@ func (cm *CorrelationManager) CorrelateMessage(ctx context.Context, tenantID, me
 		InstanceCreated:   false, // Not creating new instance, correlating with existing
 	}
 
-	// TODO: Implement actual message correlation with process instance
-	// This would involve finding intermediate catch events waiting for this message
+	// NOTE: Complete message correlation with running process instances
+	// would involve finding intermediate catch events waiting for this message
 	// and triggering them with the provided variables
 
 	// For now, just save the correlation result

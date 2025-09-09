@@ -53,6 +53,7 @@ type ComponentInterface interface {
 	GetTokensByProcessInstance(instanceID string) ([]*models.Token, error)
 	ExecuteToken(token *models.Token) error
 	ContinueExecution(instanceID string) error
+	UpdateToken(token *models.Token) error
 
 	// Timer management
 	CreateTimer(timerRequest *TimerRequest) error
@@ -90,6 +91,11 @@ type ComponentInterface interface {
 	GetErrorBoundariesForToken(tokenID string) []*ErrorBoundarySubscription
 	FindMatchingErrorBoundary(tokenID, errorCode string) *ErrorBoundarySubscription
 	RemoveErrorBoundariesForToken(tokenID string)
+
+	// Signal management
+	SubscribeToSignal(signalName, tokenID, elementID string, cancelActivity bool, variables map[string]interface{}) error
+	BroadcastSignal(signalName string, variables map[string]interface{}) error
+	UnsubscribeSignalsByToken(tokenID string) error
 
 	// Legacy compatibility (will be removed in future)
 	GetJobsComponent() interface{}
@@ -158,6 +164,9 @@ type Component struct {
 	// Error boundary management
 	errorBoundaryRegistry *ErrorBoundaryRegistry
 
+	// Signal management
+	signalManager *SignalManager
+
 	// Component state
 	ready  bool
 	ctx    context.Context
@@ -184,6 +193,9 @@ func NewComponent(storage storage.Storage) *Component {
 
 	// Initialize error boundary management
 	comp.errorBoundaryRegistry = NewErrorBoundaryRegistry()
+
+	// Initialize signal management
+	comp.signalManager = NewSignalManager(comp)
 
 	// Initialize core components
 	comp.bpmnHelper = NewBPMNHelper(storage)
@@ -569,4 +581,40 @@ func (c *Component) FindMatchingErrorBoundary(tokenID, errorCode string) *ErrorB
 
 func (c *Component) RemoveErrorBoundariesForToken(tokenID string) {
 	c.errorBoundaryRegistry.RemoveErrorBoundariesForToken(tokenID)
+}
+
+// SubscribeToSignal subscribes a token to a signal
+// Подписывает токен на сигнал
+func (c *Component) SubscribeToSignal(signalName, tokenID, elementID string, cancelActivity bool, variables map[string]interface{}) error {
+	if c.signalManager == nil {
+		return fmt.Errorf("signal manager not initialized")
+	}
+	return c.signalManager.Subscribe(signalName, tokenID, elementID, cancelActivity, variables)
+}
+
+// BroadcastSignal broadcasts a signal to all subscribers
+// Рассылает сигнал всем подписчикам
+func (c *Component) BroadcastSignal(signalName string, variables map[string]interface{}) error {
+	if c.signalManager == nil {
+		return fmt.Errorf("signal manager not initialized")
+	}
+	return c.signalManager.BroadcastSignal(signalName, variables)
+}
+
+// UnsubscribeSignalsByToken removes all signal subscriptions for a token
+// Удаляет все подписки на сигналы для токена
+func (c *Component) UnsubscribeSignalsByToken(tokenID string) error {
+	if c.signalManager == nil {
+		return fmt.Errorf("signal manager not initialized")
+	}
+	return c.signalManager.UnsubscribeByToken(tokenID)
+}
+
+// UpdateToken updates token in storage
+// Обновляет токен в storage
+func (c *Component) UpdateToken(token *models.Token) error {
+	if c.storage == nil {
+		return fmt.Errorf("storage not available")
+	}
+	return c.storage.UpdateToken(token)
 }

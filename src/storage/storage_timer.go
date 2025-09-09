@@ -21,25 +21,13 @@ import (
 // SaveTimer saves timer to database
 // Сохраняет таймер в базу данных
 func (s *BadgerStorage) SaveTimer(timer *TimerRecord) error {
-	if !s.ready {
-		return fmt.Errorf("storage not ready")
-	}
-
 	timer.UpdatedAt = time.Now()
 	if timer.CreatedAt.IsZero() {
 		timer.CreatedAt = time.Now()
 	}
 
-	data, err := json.Marshal(timer)
-	if err != nil {
-		return fmt.Errorf("failed to marshal timer: %w", err)
-	}
-
 	key := fmt.Sprintf("timer_%s", timer.ID)
-	err = s.db.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(key), data)
-	})
-
+	err := s.saveJSON(key, timer)
 	if err != nil {
 		logger.Error("Failed to save timer",
 			logger.String("timer_id", timer.ID),

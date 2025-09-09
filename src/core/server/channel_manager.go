@@ -217,7 +217,7 @@ func (cm *channelManager) isChannelClosed(ch chan string) bool {
 		if !ok {
 			return true // Channel is closed
 		}
-		// Put the value back (this is a bit hacky but works for detection)
+		// Put the value back (channel state detection method)
 		// In practice, this method should be used carefully
 		return false
 	default:

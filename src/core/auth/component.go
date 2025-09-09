@@ -202,6 +202,21 @@ func (c *component) GetAuditLogger() AuditLogger {
 	return c.auditLogger
 }
 
+// SetStorage sets storage for persistent auth operations
+// Устанавливает storage для персистентных auth операций
+func (c *component) SetStorage(storage StorageInterface) error {
+	if c.rateLimiter != nil {
+		c.rateLimiter.SetStorage(storage)
+		// Load existing state from storage
+		if err := c.rateLimiter.LoadState(); err != nil {
+			logger.Warn("Failed to load rate limiter state from storage", logger.String("error", err.Error()))
+			return err
+		}
+		logger.Info("Storage set for auth component rate limiter")
+	}
+	return nil
+}
+
 // UpdateConfig updates the auth configuration
 func (c *component) UpdateConfig(config *AuthConfig) error {
 	if config == nil {

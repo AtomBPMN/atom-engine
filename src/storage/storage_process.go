@@ -26,20 +26,8 @@ const (
 // SaveProcessInstance saves process instance to storage
 // Сохраняет экземпляр процесса в storage
 func (bs *BadgerStorage) SaveProcessInstance(instance *models.ProcessInstance) error {
-	if bs.db == nil {
-		return fmt.Errorf("database not initialized")
-	}
-
-	data, err := instance.ToJSON()
-	if err != nil {
-		return fmt.Errorf("failed to serialize process instance: %w", err)
-	}
-
 	key := ProcessInstancePrefix + instance.InstanceID
-
-	return bs.db.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(key), data)
-	})
+	return bs.saveJSON(key, instance)
 }
 
 // LoadProcessInstance loads process instance from storage

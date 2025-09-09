@@ -42,14 +42,12 @@ func (umm *UnifiedMessageManager) SetCore(core CoreInterface) {
 	umm.processor = NewBufferedMessageProcessor(umm.storage, umm.core)
 }
 
-// HandleMessageCallback handles message callback via engine
-// Обрабатывает message callback через engine
+// HandleMessageCallback handles message callback via component interface
+// Обрабатывает message callback через интерфейс компонента
 func (umm *UnifiedMessageManager) HandleMessageCallback(messageID, messageName, correlationKey, tokenID string, variables map[string]interface{}) error {
-	// Use engine for message callback handling as it's already implemented there
+	// Use component interface instead of direct engine access
 	if umm.component != nil {
-		// Get engine from component structure - this is a temporary solution
-		// В будущем это должно быть через DI
-		return umm.component.(*Component).engine.HandleMessageCallback(messageID, messageName, correlationKey, tokenID, variables)
+		return umm.component.HandleMessageCallback(messageID, messageName, correlationKey, tokenID, variables)
 	}
 	return fmt.Errorf("component not available for message callback")
 }

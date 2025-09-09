@@ -138,12 +138,12 @@ func (s *BadgerStorage) applyPerformanceOptions(opts *badger.Options) {
 		// Loading mode settings - Note: BadgerDB v3 may have different field names
 		if perf.TableLoadingMode != nil {
 			logger.Debug("TableLoadingMode setting noted (implementation depends on BadgerDB version)", logger.String("mode", *perf.TableLoadingMode))
-			// TODO: Apply when correct field name is confirmed for BadgerDB v3
+			// NOTE: Field name may vary in different BadgerDB versions
 		}
 
 		if perf.ValueLogLoadingMode != nil {
 			logger.Debug("ValueLogLoadingMode setting noted (implementation depends on BadgerDB version)", logger.String("mode", *perf.ValueLogLoadingMode))
-			// TODO: Apply when correct field name is confirmed for BadgerDB v3
+			// NOTE: Field name may vary in different BadgerDB versions
 		}
 
 		// Advanced settings

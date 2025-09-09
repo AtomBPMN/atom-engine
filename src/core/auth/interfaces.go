@@ -8,6 +8,17 @@ This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
 
 package auth
 
+import "atom-engine/src/storage"
+
+// StorageInterface defines minimal storage interface needed by auth components
+type StorageInterface interface {
+	SaveRateLimitInfo(identifier string, info *storage.RateLimitInfo) error
+	LoadRateLimitInfo(identifier string) (*storage.RateLimitInfo, error)
+	LoadAllRateLimitInfo() (map[string]*storage.RateLimitInfo, error)
+	DeleteRateLimitInfo(identifier string) error
+	CleanupExpiredRateLimitInfo() error
+}
+
 // AuthManager defines the main authentication manager interface
 type AuthManager interface {
 	// Authenticate validates the authentication context
@@ -51,6 +62,12 @@ type RateLimiter interface {
 
 	// GetStats returns current rate limiting statistics
 	GetStats() map[string]interface{}
+
+	// SetStorage sets storage for persistent rate limiting
+	SetStorage(storage StorageInterface)
+
+	// LoadState loads rate limiter state from storage
+	LoadState() error
 }
 
 // AuditLogger defines interface for security event logging
@@ -98,4 +115,7 @@ type Component interface {
 
 	// GetAuditLogger returns audit logger
 	GetAuditLogger() AuditLogger
+
+	// SetStorage sets storage for persistent auth operations
+	SetStorage(storage StorageInterface) error
 }

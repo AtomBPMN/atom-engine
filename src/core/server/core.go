@@ -542,7 +542,7 @@ func (c *Core) GetSystemStatus() (*types.SystemStatus, error) {
 	return &types.SystemStatus{
 		Status:          status,
 		Health:          health,
-		Version:         "1.0.0", // TODO: get from build info
+		Version:         version.Version,
 		StartedAt:       c.startTime,
 		Uptime:          uptime,
 		Components:      components,
@@ -578,7 +578,7 @@ func (c *Core) GetSystemInfo() (*types.SystemInfo, error) {
 		Version:       version.Version,        // Use real version from build info
 		BuildTime:     version.GetBuildTime(), // Use real build time
 		GitCommit:     version.GitCommit,      // Use real git commit
-		Environment:   "development",          // TODO: get from config
+		Environment:   config.GetEnvWithDefault("ATOM_ENVIRONMENT", "development"),
 		StartedAt:     c.startTime,
 		Uptime:        time.Since(c.startTime),
 		HostInfo:      hostInfo,
@@ -743,11 +743,11 @@ func (c *Core) StartProcessTyped(req *types.ProcessStartRequest) (*types.Process
 	return &types.ProcessStartResponse{
 		InstanceID: result.InstanceID,
 		ProcessKey: result.ProcessKey,
-		Version:    1,                         // TODO: get from result when available
-		Status:     types.ProcessStatusActive, // TODO: convert from result.State when available
+		Version:    int32(result.ProcessVersion),
+		Status:     convertProcessInstanceState(result.State),
 		Success:    true,
 		Message:    "process started successfully",
-		StartedAt:  time.Now(),
+		StartedAt:  result.StartedAt,
 		Variables:  req.Variables,
 	}, nil
 }
@@ -782,18 +782,109 @@ func (c *Core) CancelProcessTyped(req *types.ProcessCancelRequest) (*types.Proce
 func (c *Core) ExecuteOperation(operationName string, params types.Variables) (*types.OperationResult, error) {
 	start := time.Now()
 
-	// TODO: Implement operation registry and execution
-	return &types.OperationResult{
-		Success:    false,
-		Message:    "operation execution not implemented yet",
-		Data:       nil,
+	// Increment request count for operation tracking
+	if err := c.IncrementRequestCount(); err != nil {
+		logger.Warn("Failed to increment request count", logger.String("error", err.Error()))
+	}
+
+	result := &types.OperationResult{
 		ExecutedAt: start,
-		Duration:   time.Since(start),
 		Metadata: map[string]interface{}{
 			"operation": operationName,
 			"params":    params,
 		},
-	}, fmt.Errorf("operation execution not implemented yet")
+	}
+
+	// Execute based on operation name
+	switch operationName {
+	case "system.status":
+		status, err := c.GetSystemStatus()
+		if err != nil {
+			result.Success = false
+			result.Message = fmt.Sprintf("Failed to get system status: %v", err)
+			result.Duration = time.Since(start)
+			c.IncrementErrorCount()
+			return result, err
+		}
+		result.Success = true
+		result.Message = "System status retrieved successfully"
+		result.Data = status
+
+	case "system.info":
+		info, err := c.GetSystemInfo()
+		if err != nil {
+			result.Success = false
+			result.Message = fmt.Sprintf("Failed to get system info: %v", err)
+			result.Duration = time.Since(start)
+			c.IncrementErrorCount()
+			return result, err
+		}
+		result.Success = true
+		result.Message = "System info retrieved successfully"
+		result.Data = info
+
+	case "system.metrics":
+		metrics, err := c.GetSystemMetrics()
+		if err != nil {
+			result.Success = false
+			result.Message = fmt.Sprintf("Failed to get system metrics: %v", err)
+			result.Duration = time.Since(start)
+			c.IncrementErrorCount()
+			return result, err
+		}
+		result.Success = true
+		result.Message = "System metrics retrieved successfully"
+		result.Data = metrics
+
+	case "storage.status":
+		storageStatus, err := c.GetStorageStatus()
+		if err != nil {
+			result.Success = false
+			result.Message = fmt.Sprintf("Failed to get storage status: %v", err)
+			result.Duration = time.Since(start)
+			c.IncrementErrorCount()
+			return result, err
+		}
+		result.Success = true
+		result.Message = "Storage status retrieved successfully"
+		result.Data = storageStatus
+
+	case "storage.info":
+		storageInfo, err := c.GetStorageInfo()
+		if err != nil {
+			result.Success = false
+			result.Message = fmt.Sprintf("Failed to get storage info: %v", err)
+			result.Duration = time.Since(start)
+			c.IncrementErrorCount()
+			return result, err
+		}
+		result.Success = true
+		result.Message = "Storage info retrieved successfully"
+		result.Data = storageInfo
+
+	default:
+		result.Success = false
+		result.Message = fmt.Sprintf("Unknown operation: %s", operationName)
+		result.Data = map[string]interface{}{
+			"available_operations": []string{
+				"system.status",
+				"system.info",
+				"system.metrics",
+				"storage.status",
+				"storage.info",
+			},
+		}
+		result.Duration = time.Since(start)
+		c.IncrementErrorCount()
+		return result, fmt.Errorf("unknown operation: %s", operationName)
+	}
+
+	result.Duration = time.Since(start)
+	logger.Debug("Operation executed successfully",
+		logger.String("operation", operationName),
+		logger.String("duration", result.Duration.String()))
+
+	return result, nil
 }
 
 // ExecuteBatchOperation executes batch operations
@@ -938,18 +1029,46 @@ func (c *Core) gatherSystemMetrics() types.SystemMetrics {
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 
+	// Load persistent metrics from storage
+	persistedMetrics, err := c.storage.LoadSystemMetrics()
+	if err != nil {
+		logger.Warn("Failed to load system metrics from storage", logger.String("error", err.Error()))
+		// Continue with default values if storage fails
+		persistedMetrics = &storage.SystemMetrics{}
+	}
+
+	// Calculate CPU usage
+	cpuUsage := c.calculateCPUUsage()
+
+	// Update current memory usage in storage
+	memoryUsage := int64(memStats.Alloc)
+	if err := c.storage.UpdateMemoryUsage(memoryUsage); err != nil {
+		logger.Warn("Failed to update memory usage in storage", logger.String("error", err.Error()))
+	}
+
+	// Update CPU usage in storage
+	if err := c.storage.UpdateCPUUsage(cpuUsage); err != nil {
+		logger.Warn("Failed to update CPU usage in storage", logger.String("error", err.Error()))
+	}
+
+	// Calculate error rate
+	errorRate := float64(0)
+	if persistedMetrics.TotalRequests > 0 {
+		errorRate = float64(persistedMetrics.TotalErrors) / float64(persistedMetrics.TotalRequests) * 100
+	}
+
 	return types.SystemMetrics{
-		TotalRequests:       0, // TODO: implement request counting
-		TotalErrors:         0, // TODO: implement error counting
-		ErrorRate:           0,
-		AverageResponseTime: 0, // TODO: implement response time tracking
-		RequestsPerSecond:   0, // TODO: implement RPS tracking
-		MemoryUsage:         int64(memStats.Alloc),
-		CPUUsage:            0, // TODO: implement CPU usage tracking
-		DiskUsage:           0, // TODO: implement disk usage tracking
-		NetworkIn:           0, // TODO: implement network stats
-		NetworkOut:          0, // TODO: implement network stats
-		ActiveConnections:   0, // TODO: implement connection counting
+		TotalRequests:       persistedMetrics.TotalRequests,
+		TotalErrors:         persistedMetrics.TotalErrors,
+		ErrorRate:           errorRate,
+		AverageResponseTime: persistedMetrics.AverageResponseTime,
+		RequestsPerSecond:   persistedMetrics.RequestsPerSecond,
+		MemoryUsage:         memoryUsage,
+		CPUUsage:            cpuUsage,
+		DiskUsage:           persistedMetrics.DiskUsage,
+		NetworkIn:           persistedMetrics.NetworkIn,
+		NetworkOut:          persistedMetrics.NetworkOut,
+		ActiveConnections:   persistedMetrics.ActiveConnections,
 		Goroutines:          int32(runtime.NumGoroutine()),
 	}
 }
@@ -967,4 +1086,60 @@ func (c *Core) getSystemConfiguration() map[string]interface{} {
 	}
 
 	return config
+}
+
+// calculateCPUUsage calculates current CPU usage
+// Вычисляет текущее использование CPU
+func (c *Core) calculateCPUUsage() float64 {
+	// Simple CPU usage calculation based on goroutines and process time
+	// This is a basic implementation - for production, consider using more sophisticated methods
+	numGoroutines := runtime.NumGoroutine()
+
+	// Rough estimation based on number of goroutines and system load
+	// For more accurate CPU usage, would need to track CPU time over intervals
+	baseUsage := float64(numGoroutines) * 0.1
+	if baseUsage > 100.0 {
+		baseUsage = 100.0
+	}
+
+	return baseUsage
+}
+
+// IncrementRequestCount increments total request count
+// Увеличивает общий счетчик запросов
+func (c *Core) IncrementRequestCount() error {
+	if c.storage != nil {
+		return c.storage.IncrementRequestCount()
+	}
+	return nil
+}
+
+// IncrementErrorCount increments total error count
+// Увеличивает общий счетчик ошибок
+func (c *Core) IncrementErrorCount() error {
+	if c.storage != nil {
+		return c.storage.IncrementErrorCount()
+	}
+	return nil
+}
+
+// convertProcessInstanceState converts models.ProcessInstanceState to types.ProcessStatus
+// Конвертирует models.ProcessInstanceState в types.ProcessStatus
+func convertProcessInstanceState(state models.ProcessInstanceState) types.ProcessStatus {
+	switch state {
+	case models.ProcessInstanceStateActive:
+		return types.ProcessStatusActive
+	case models.ProcessInstanceStateCompleted:
+		return types.ProcessStatusCompleted
+	case models.ProcessInstanceStateCanceled:
+		return types.ProcessStatusCancelled
+	case models.ProcessInstanceStateFailed:
+		return types.ProcessStatusFailed
+	case models.ProcessInstanceStateSuspended:
+		return types.ProcessStatusSuspended
+	case models.ProcessInstanceStateMessages:
+		return types.ProcessStatusActive // Messages state is still active
+	default:
+		return types.ProcessStatusActive // Default to active for unknown states
+	}
 }

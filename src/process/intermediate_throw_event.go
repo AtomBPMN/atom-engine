@@ -9,6 +9,8 @@ This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
 package process
 
 import (
+	"fmt"
+
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
 )
@@ -197,7 +199,7 @@ func (itee *IntermediateThrowEventExecutor) handleMessageThrowEvent(token *model
 		}
 	}
 
-	// Publish message through process component  
+	// Publish message through process component
 	// Публикуем сообщение через process component с element ID
 	if itee.processComponent != nil && messageName != "" {
 		result, err := itee.processComponent.PublishMessageWithElementID(messageName, correlationKey, token.CurrentElementID, token.Variables)
@@ -260,12 +262,51 @@ func (itee *IntermediateThrowEventExecutor) handleSignalThrowEvent(token *models
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID))
 
-	// Signal broadcasting not implemented
-	// Broadcasting сигнала не реализован
-	logger.Info("Signal throw event - broadcasting not yet implemented")
+	// Extract signal name from event definition
+	signalName := ""
+	if signalRef, exists := eventDef["signal_ref"]; exists {
+		if signalRefStr, ok := signalRef.(string); ok {
+			signalName = signalRefStr
+		}
+	}
 
-	// Continue with regular flow
-	// Продолжаем с обычным потоком
+	// Fallback: use element ID as signal name if no signal_ref
+	if signalName == "" {
+		signalName = token.CurrentElementID + "_signal"
+		logger.Warn("No signal_ref found, using element ID as signal name",
+			logger.String("signal_name", signalName))
+	}
+
+	// Broadcast signal using process component
+	if itee.processComponent != nil {
+		variables := make(map[string]interface{})
+		if token.Variables != nil {
+			variables = token.Variables
+		}
+
+		err := itee.processComponent.BroadcastSignal(signalName, variables)
+		if err != nil {
+			logger.Error("Failed to broadcast signal",
+				logger.String("signal_name", signalName),
+				logger.String("token_id", token.TokenID),
+				logger.String("error", err.Error()))
+			return &ExecutionResult{
+				Success:   false,
+				Error:     fmt.Sprintf("failed to broadcast signal: %v", err),
+				Completed: false,
+			}, err
+		}
+
+		logger.Info("Successfully broadcast signal",
+			logger.String("signal_name", signalName),
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID))
+	} else {
+		logger.Warn("Process component not available, cannot broadcast signal")
+	}
+
+	// Continue with regular flow after broadcasting signal
+	// Продолжаем с обычным потоком после broadcasting сигнала
 	return itee.executeRegularThrowEvent(token, element)
 }
 

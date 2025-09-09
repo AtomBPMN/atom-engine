@@ -20,52 +20,8 @@ type TaskExecutor struct{}
 // Execute executes task
 // Выполняет задачу
 func (te *TaskExecutor) Execute(token *models.Token, element map[string]interface{}) (*ExecutionResult, error) {
-	logger.Info("Executing task",
-		logger.String("token_id", token.TokenID),
-		logger.String("element_id", token.CurrentElementID))
-
-	// Get task name for logging
-	taskName, _ := element["name"].(string)
-	if taskName == "" {
-		taskName = token.CurrentElementID
-	}
-
-	logger.Info("Task executed - moving to next elements",
-		logger.String("token_id", token.TokenID),
-		logger.String("element_id", token.CurrentElementID),
-		logger.String("task_name", taskName))
-
-	// For basic task, we just pass through to next elements
-	// In real implementation, this would create jobs, call services, etc.
-	outgoing, exists := element["outgoing"]
-	if !exists {
-		// Task with no outgoing flows - complete the token
-		return &ExecutionResult{
-			Success:      true,
-			TokenUpdated: true,
-			NextElements: []string{},
-			Completed:    true,
-		}, nil
-	}
-
-	// Get outgoing sequence flows
-	var nextElements []string
-	if outgoingList, ok := outgoing.([]interface{}); ok {
-		for _, item := range outgoingList {
-			if flowID, ok := item.(string); ok {
-				nextElements = append(nextElements, flowID)
-			}
-		}
-	} else if outgoingStr, ok := outgoing.(string); ok {
-		nextElements = append(nextElements, outgoingStr)
-	}
-
-	return &ExecutionResult{
-		Success:      true,
-		TokenUpdated: false,
-		NextElements: nextElements,
-		Completed:    false,
-	}, nil
+	// Use helper function for basic flow element execution
+	return executeBasicFlowElement(token, element, "task")
 }
 
 // GetElementType returns element type

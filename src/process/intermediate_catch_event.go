@@ -9,6 +9,8 @@ This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
 package process
 
 import (
+	"fmt"
+
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
 )
@@ -86,12 +88,58 @@ func (icee *IntermediateCatchEventExecutor) handleSignalEvent(token *models.Toke
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID))
 
-	// Signal subscription not implemented
-	// For now, proceed immediately as signals are not implemented
-	logger.Warn("Signal events not yet implemented - proceeding immediately",
-		logger.String("token_id", token.TokenID),
-		logger.String("element_id", token.CurrentElementID))
+	// Extract signal name from event definition
+	signalName := ""
+	if signalRef, exists := eventDef["signal_ref"]; exists {
+		if signalRefStr, ok := signalRef.(string); ok {
+			signalName = signalRefStr
+		}
+	}
 
+	// Fallback: use element ID as signal name if no signal_ref
+	if signalName == "" {
+		signalName = token.CurrentElementID + "_signal"
+		logger.Warn("No signal_ref found, using element ID as signal name",
+			logger.String("signal_name", signalName))
+	}
+
+	// Subscribe to signal using process component
+	if icee.processComponent != nil {
+		variables := make(map[string]interface{})
+		if token.Variables != nil {
+			variables = token.Variables
+		}
+
+		err := icee.processComponent.SubscribeToSignal(signalName, token.TokenID, token.CurrentElementID, false, variables)
+		if err != nil {
+			logger.Error("Failed to subscribe to signal",
+				logger.String("signal_name", signalName),
+				logger.String("token_id", token.TokenID),
+				logger.String("error", err.Error()))
+			return &ExecutionResult{
+				Success:   false,
+				Error:     fmt.Sprintf("failed to subscribe to signal: %v", err),
+				Completed: false,
+			}, err
+		}
+
+		logger.Info("Successfully subscribed to signal",
+			logger.String("signal_name", signalName),
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID))
+
+		// Return waiting state - signal will trigger via callback when received
+		return &ExecutionResult{
+			Success:      true,
+			TokenUpdated: false,
+			NextElements: []string{},
+			WaitingFor:   fmt.Sprintf("signal:%s", signalName),
+			Completed:    false,
+		}, nil
+	}
+
+	// Fallback if no process component available
+	logger.Warn("Process component not available, proceeding with default behavior")
 	return icee.handleDefaultEvent(token, element)
 }
 

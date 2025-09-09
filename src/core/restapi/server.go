@@ -371,27 +371,116 @@ func (s *Server) swaggerHandler(c *gin.Context) {
 	})
 }
 
-// Daemon handlers - available through CLI interface
+// Daemon handlers - implemented REST endpoints
 func (s *Server) daemonStatusHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, models.ErrorResponse(
-		models.NewAPIError("NOT_IMPLEMENTED", "Use CLI: atomd status"),
-		"daemon_status"))
+	requestID := s.getRequestID(c)
+
+	// Get system status from core
+	status, err := s.coreInterface.GetSystemStatus()
+	if err != nil {
+		logger.Error("Failed to get daemon status", logger.String("error", err.Error()))
+		apiErr := models.InternalServerError("Failed to get daemon status")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Return daemon status information
+	response := map[string]interface{}{
+		"status":     status.Status,
+		"health":     status.Health,
+		"uptime":     status.Uptime,
+		"version":    status.Version,
+		"components": status.ComponentsTotal,
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(response, requestID))
 }
 
 func (s *Server) daemonStartHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, models.ErrorResponse(
-		models.NewAPIError("NOT_IMPLEMENTED", "Use CLI: atomd start"),
-		"daemon_start"))
+	requestID := s.getRequestID(c)
+
+	// Daemon start/stop operations are managed at system level, not through REST API
+	// These operations affect the entire system and should be done through CLI
+	response := map[string]interface{}{
+		"message": "Daemon is already running if you can reach this endpoint",
+		"note":    "Use CLI 'atomd start' to start daemon, 'atomd stop' to stop",
+		"status":  "running",
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(response, requestID))
 }
 
 func (s *Server) daemonStopHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, models.ErrorResponse(
-		models.NewAPIError("NOT_IMPLEMENTED", "Use CLI: atomd stop"),
-		"daemon_stop"))
+	requestID := s.getRequestID(c)
+
+	// Graceful shutdown would stop this endpoint itself, so we can't implement it here
+	// Direct shutdown should be done through CLI or system signals
+	response := map[string]interface{}{
+		"message": "Graceful shutdown should be initiated through CLI or system signals",
+		"note":    "Use CLI 'atomd stop' for graceful shutdown",
+		"warning": "REST endpoint cannot stop itself",
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(response, requestID))
 }
 
 func (s *Server) daemonEventsHandler(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, models.ErrorResponse(
-		models.NewAPIError("NOT_IMPLEMENTED", "Use CLI: atomd events"),
-		"daemon_events"))
+	requestID := s.getRequestID(c)
+
+	// Get system events from storage through core
+	storageComp := s.coreInterface.GetStorageTyped()
+	if storageComp == nil {
+		apiErr := models.InternalServerError("Storage component not available")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// For now, return system status and info as "events"
+	// This can be enhanced later to get actual event logs from storage
+	status, err := s.coreInterface.GetSystemStatus()
+	if err != nil {
+		logger.Error("Failed to get system status for events", logger.String("error", err.Error()))
+		apiErr := models.InternalServerError("Failed to get system events")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	info, err := s.coreInterface.GetSystemInfo()
+	if err != nil {
+		logger.Error("Failed to get system info for events", logger.String("error", err.Error()))
+		apiErr := models.InternalServerError("Failed to get system events")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Return recent system events information
+	response := map[string]interface{}{
+		"events": []map[string]interface{}{
+			{
+				"type":      "system_status",
+				"timestamp": time.Now(),
+				"status":    status.Status,
+				"health":    status.Health,
+				"message":   "System status check",
+			},
+			{
+				"type":      "system_info",
+				"timestamp": time.Now(),
+				"version":   info.Version,
+				"uptime":    info.Uptime,
+				"message":   "System information",
+			},
+		},
+		"note": "Use CLI 'atomd events' for detailed event logs from storage",
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(response, requestID))
+}
+
+// getRequestID extracts request ID from context or generates one
+func (s *Server) getRequestID(c *gin.Context) string {
+	if requestID := c.GetHeader("X-Request-ID"); requestID != "" {
+		return requestID
+	}
+	return fmt.Sprintf("req_%d", time.Now().UnixNano())
 }

@@ -100,6 +100,32 @@ type Storage interface {
 	GetIncident(incidentID string) (interface{}, error)
 	ListIncidents(filter interface{}) (interface{}, int, error)
 
+	// System metrics persistence methods
+	// Методы персистентности системных метрик
+	SaveSystemMetrics(metrics *SystemMetrics) error
+	LoadSystemMetrics() (*SystemMetrics, error)
+	IncrementRequestCount() error
+	IncrementErrorCount() error
+	UpdateCPUUsage(usage float64) error
+	UpdateMemoryUsage(usage int64) error
+
+	// Rate limiter persistence methods
+	// Методы персистентности rate limiter
+	SaveRateLimitInfo(identifier string, info *RateLimitInfo) error
+	LoadRateLimitInfo(identifier string) (*RateLimitInfo, error)
+	LoadAllRateLimitInfo() (map[string]*RateLimitInfo, error)
+	DeleteRateLimitInfo(identifier string) error
+	CleanupExpiredRateLimitInfo() error
+
+	// Message multiplexer persistence methods
+	// Методы персистентности message multiplexer
+	SaveMultiplexerState(componentName string, state *MultiplexerState) error
+	LoadMultiplexerState(componentName string) (*MultiplexerState, error)
+	SaveChannelStats(componentName string, stats *ChannelStatistics) error
+	LoadChannelStats(componentName string) (*ChannelStatistics, error)
+	SaveRoutingMetrics(componentName string, metrics *RoutingMetrics) error
+	LoadRoutingMetrics(componentName string) (*RoutingMetrics, error)
+
 	// Batch operations methods
 	// Методы пакетных операций
 	SaveBufferedMessagesBatch(ctx context.Context, messages []*models.BufferedMessage) error
@@ -217,4 +243,74 @@ type TimerRecord struct {
 	CreatedAt         time.Time              `json:"created_at"`
 	UpdatedAt         time.Time              `json:"updated_at"`
 	State             string                 `json:"state"` // SCHEDULED, FIRED, CANCELLED
+}
+
+// SystemMetrics represents persistent system metrics
+// Представляет персистентные системные метрики
+type SystemMetrics struct {
+	TotalRequests       int64         `json:"total_requests"`
+	TotalErrors         int64         `json:"total_errors"`
+	ErrorRate           float64       `json:"error_rate"`
+	AverageResponseTime time.Duration `json:"average_response_time"`
+	RequestsPerSecond   float64       `json:"requests_per_second"`
+	MemoryUsage         int64         `json:"memory_usage"`
+	CPUUsage            float64       `json:"cpu_usage"`
+	DiskUsage           int64         `json:"disk_usage"`
+	NetworkIn           int64         `json:"network_in"`
+	NetworkOut          int64         `json:"network_out"`
+	ActiveConnections   int32         `json:"active_connections"`
+	Goroutines          int32         `json:"goroutines"`
+	LastUpdated         time.Time     `json:"last_updated"`
+}
+
+// RateLimitInfo represents persistent rate limit information
+// Представляет персистентную информацию о rate limit
+type RateLimitInfo struct {
+	Identifier string    `json:"identifier"`
+	Count      int       `json:"count"`
+	ResetTime  time.Time `json:"reset_time"`
+	LastAccess time.Time `json:"last_access"`
+}
+
+// MultiplexerState represents persistent multiplexer state
+// Представляет персистентное состояние мультиплексера
+type MultiplexerState struct {
+	ComponentName string    `json:"component_name"`
+	IsRunning     bool      `json:"is_running"`
+	StartTime     time.Time `json:"start_time"`
+	LastMessage   time.Time `json:"last_message"`
+	LastUpdated   time.Time `json:"last_updated"`
+}
+
+// ChannelStatistics represents persistent channel statistics
+// Представляет персистентную статистику каналов
+type ChannelStatistics struct {
+	ComponentName string                  `json:"component_name"`
+	ChannelStats  map[string]*ChannelStat `json:"channel_stats"`
+	BufferSize    int                     `json:"buffer_size"`
+	Timeout       time.Duration           `json:"timeout"`
+	LastUpdated   time.Time               `json:"last_updated"`
+}
+
+// ChannelStat represents statistics for a single channel
+// Представляет статистику для одного канала
+type ChannelStat struct {
+	MessageType  string `json:"message_type"`
+	MessageCount uint64 `json:"message_count"`
+	LastActivity int64  `json:"last_activity"`
+}
+
+// RoutingMetrics represents persistent routing metrics
+// Представляет персистентные метрики маршрутизации
+type RoutingMetrics struct {
+	ComponentName   string    `json:"component_name"`
+	TotalMessages   uint64    `json:"total_messages"`
+	APIResponses    uint64    `json:"api_responses"`
+	JobCallbacks    uint64    `json:"job_callbacks"`
+	BPMNErrors      uint64    `json:"bpmn_errors"`
+	UnknownMessages uint64    `json:"unknown_messages"`
+	DroppedMessages uint64    `json:"dropped_messages"`
+	RoutingErrors   uint64    `json:"routing_errors"`
+	LastMessageTime int64     `json:"last_message_time"`
+	LastUpdated     time.Time `json:"last_updated"`
 }

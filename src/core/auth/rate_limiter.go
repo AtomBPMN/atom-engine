@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"atom-engine/src/core/logger"
+	"atom-engine/src/storage"
 )
 
 // requestInfo stores request information for rate limiting
@@ -29,6 +30,7 @@ type rateLimiter struct {
 	mutex             sync.RWMutex
 	cleanupTicker     *time.Ticker
 	stopCleanup       chan bool
+	storage           StorageInterface
 }
 
 // NewRateLimiter creates a new rate limiter
@@ -74,6 +76,8 @@ func (rl *rateLimiter) CheckLimit(clientIP string, apiKey string) bool {
 			count:     1,
 			resetTime: resetTime,
 		}
+		// Save to storage if available
+		rl.saveToStorage(identifier, 1, resetTime)
 		return true
 	}
 
@@ -82,6 +86,8 @@ func (rl *rateLimiter) CheckLimit(clientIP string, apiKey string) bool {
 		// Reset the counter
 		info.count = 1
 		info.resetTime = resetTime
+		// Save to storage if available
+		rl.saveToStorage(identifier, info.count, info.resetTime)
 		return true
 	}
 
@@ -121,6 +127,8 @@ func (rl *rateLimiter) RecordRequest(clientIP string, apiKey string) {
 			count:     1,
 			resetTime: resetTime,
 		}
+		// Save to storage if available
+		rl.saveToStorage(identifier, 1, resetTime)
 		return
 	}
 
@@ -133,6 +141,9 @@ func (rl *rateLimiter) RecordRequest(clientIP string, apiKey string) {
 		// Increment counter
 		info.count++
 	}
+
+	// Save to storage if available
+	rl.saveToStorage(identifier, info.count, info.resetTime)
 }
 
 // GetStats returns current rate limiting statistics
@@ -196,6 +207,13 @@ func (rl *rateLimiter) performCleanup() {
 		}
 	}
 
+	// Also cleanup expired entries from storage
+	if rl.storage != nil {
+		if err := rl.storage.CleanupExpiredRateLimitInfo(); err != nil {
+			logger.Warn("Failed to cleanup expired rate limit info from storage", logger.String("error", err.Error()))
+		}
+	}
+
 	if expiredCount > 0 {
 		logger.Debug("Rate limiter cleanup completed",
 			logger.Int("expired_entries", expiredCount),
@@ -233,4 +251,72 @@ func (rl *rateLimiter) UpdateConfig(enabled bool, requestsPerMinute int) {
 	logger.Info("Rate limiter configuration updated",
 		logger.Bool("enabled", enabled),
 		logger.Int("requests_per_minute", requestsPerMinute))
+}
+
+// SetStorage sets storage for persistent rate limiting
+// Устанавливает storage для персистентного rate limiting
+func (rl *rateLimiter) SetStorage(storage StorageInterface) {
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+	rl.storage = storage
+
+	logger.Debug("Storage set for rate limiter")
+}
+
+// LoadState loads rate limiter state from storage
+// Загружает состояние rate limiter из storage
+func (rl *rateLimiter) LoadState() error {
+	if rl.storage == nil {
+		return nil // No storage available, skip loading
+	}
+
+	rl.mutex.Lock()
+	defer rl.mutex.Unlock()
+
+	// Load all rate limit info from storage
+	storedInfo, err := rl.storage.LoadAllRateLimitInfo()
+	if err != nil {
+		logger.Warn("Failed to load rate limit state from storage", logger.String("error", err.Error()))
+		return err
+	}
+
+	// Convert storage format to internal format
+	for identifier, info := range storedInfo {
+		// Skip expired entries
+		if time.Now().After(info.ResetTime) {
+			continue
+		}
+
+		rl.requests[identifier] = &requestInfo{
+			count:     info.Count,
+			resetTime: info.ResetTime,
+		}
+	}
+
+	logger.Info("Rate limiter state loaded from storage", logger.Int("entries", len(storedInfo)))
+	return nil
+}
+
+// saveToStorage saves rate limit info to storage (called with mutex held)
+// Сохраняет информацию о rate limit в storage (вызывается с захваченным mutex)
+func (rl *rateLimiter) saveToStorage(identifier string, count int, resetTime time.Time) {
+	if rl.storage == nil {
+		return
+	}
+
+	info := &storage.RateLimitInfo{
+		Identifier: identifier,
+		Count:      count,
+		ResetTime:  resetTime,
+		LastAccess: time.Now(),
+	}
+
+	// Save asynchronously to avoid blocking rate limiter operations
+	go func() {
+		if err := rl.storage.SaveRateLimitInfo(identifier, info); err != nil {
+			logger.Warn("Failed to save rate limit info to storage",
+				logger.String("identifier", identifier),
+				logger.String("error", err.Error()))
+		}
+	}()
 }

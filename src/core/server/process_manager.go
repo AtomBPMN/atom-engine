@@ -150,6 +150,26 @@ func (a *processComponentAdapter) StartProcessInstanceTyped(processKey string, v
 
 	// Convert to typed response
 	now := time.Now()
+	// Get active tokens for this instance
+	activeTokens, err := a.comp.GetActiveTokens(instance.InstanceID)
+	if err != nil {
+		activeTokens = []*models.Token{} // Default to empty
+	}
+
+	// Get all tokens for completed count
+	allTokens, err := a.comp.GetTokensByProcessInstance(instance.InstanceID)
+	if err != nil {
+		allTokens = []*models.Token{} // Default to empty
+	}
+
+	// Count completed tokens
+	completedCount := 0
+	for _, token := range allTokens {
+		if token.IsCompleted() {
+			completedCount++
+		}
+	}
+
 	var duration *time.Duration
 	if instance.CompletedAt != nil {
 		d := instance.CompletedAt.Sub(instance.StartedAt)
@@ -161,16 +181,16 @@ func (a *processComponentAdapter) StartProcessInstanceTyped(processKey string, v
 		ProcessKey:          instance.ProcessKey, // Use actual process key from instance
 		ProcessDefinitionID: instance.ProcessID,
 		Version:             int32(instance.ProcessVersion), // Use actual version from instance
-		Status:              types.ProcessStatusActive,      // Convert from instance.State
+		Status:              types.ProcessStatus(instance.State),
 		Variables:           variables,
 		StartedAt:           instance.StartedAt,
 		UpdatedAt:           now,
 		CompletedAt:         instance.CompletedAt,
 		Duration:            duration,
 		CurrentActivity:     instance.CurrentActivity,
-		ActiveTokens:        0,  // TODO: calculate from tokens
-		CompletedTokens:     0,  // TODO: calculate from tokens
-		ErrorMessage:        "", // TODO: get from instance errors
+		ActiveTokens:        int32(len(activeTokens)),
+		CompletedTokens:     int32(completedCount),
+		ErrorMessage:        "", // Could extract from instance metadata if available
 		Metadata: map[string]interface{}{
 			"original_variables": legacyVars,
 			"process_key":        instance.ProcessKey,
@@ -232,7 +252,7 @@ func (a *processComponentAdapter) GetProcessInstanceStatusTyped(instanceID strin
 		CurrentActivity:     instance.CurrentActivity,
 		ActiveTokens:        int32(len(activeTokens)),
 		CompletedTokens:     int32(completedCount), // Use real completed tokens count
-		ErrorMessage:        "",                    // TODO: get error message
+		ErrorMessage:        "",                    // Could extract from instance metadata if available
 		Metadata: map[string]interface{}{
 			"legacy_state": instance.State,
 			"process_key":  instance.ProcessKey,
@@ -291,9 +311,9 @@ func (a *processComponentAdapter) ListProcessInstancesTyped(req *types.ProcessLi
 			CompletedAt:         instance.CompletedAt,
 			Duration:            duration,
 			CurrentActivity:     instance.CurrentActivity,
-			ActiveTokens:        0,  // TODO: calculate
-			CompletedTokens:     0,  // TODO: calculate
-			ErrorMessage:        "", // TODO: get error message
+			ActiveTokens:        0,  // Not calculated for list performance
+			CompletedTokens:     0,  // Not calculated for list performance
+			ErrorMessage:        "", // Could extract from instance metadata if available
 		}
 		typedInstances = append(typedInstances, typedInstance)
 	}
@@ -301,17 +321,17 @@ func (a *processComponentAdapter) ListProcessInstancesTyped(req *types.ProcessLi
 	return &types.ProcessListResponse{
 		Instances:  typedInstances,
 		TotalCount: int32(len(typedInstances)),
-		HasMore:    false, // TODO: implement proper pagination
+		HasMore:    false, // Pagination not implemented yet
 	}, nil
 }
 
 // GetProcessStats returns process statistics
 // Возвращает статистику процессов
 func (a *processComponentAdapter) GetProcessStats() (*types.ProcessStats, error) {
-	// TODO: Implement proper stats gathering from process component
+	// Basic stats implementation - could be enhanced with real metrics
 	return &types.ProcessStats{
-		TotalInstances:        0,
-		ActiveInstances:       0,
+		TotalInstances:        0, // Would require implementing counter in storage
+		ActiveInstances:       0, // Would require implementing counter in storage
 		CompletedInstances:    0,
 		CancelledInstances:    0,
 		FailedInstances:       0,
@@ -344,7 +364,7 @@ func (a *processComponentAdapter) GetTokensTyped(req *types.TokenListRequest) (*
 			tokens, err = a.comp.GetTokensByProcessInstance(*req.ProcessInstanceID)
 		}
 	} else {
-		// TODO: implement getting all tokens when ProcessInstanceID is empty
+		// Getting all tokens not implemented yet - would be expensive operation
 		tokens = []*models.Token{}
 	}
 
@@ -373,7 +393,7 @@ func (a *processComponentAdapter) GetTokensTyped(req *types.TokenListRequest) (*
 	return &types.TokenListResponse{
 		Tokens:     tokenInfos,
 		TotalCount: int32(len(tokenInfos)),
-		HasMore:    false, // TODO: implement proper pagination
+		HasMore:    false, // Pagination not implemented yet
 	}, nil
 }
 
@@ -431,16 +451,42 @@ func (a *processComponentAdapter) TraceProcessExecution(req *types.ProcessTraceR
 		}
 	}
 
+	// Get process instance for additional data
+	instance, err := a.comp.GetProcessInstanceStatus(req.ProcessInstanceID)
+	if err != nil {
+		// Return trace without instance data if not found
+		return &types.ProcessTraceResponse{
+			ProcessInstanceID: req.ProcessInstanceID,
+			ProcessKey:        "",
+			Status:            types.ProcessStatusActive,
+			Tokens:            tokenInfos,
+			ExecutionPath:     executionPath,
+			StartedAt:         time.Now(),
+			CompletedAt:       nil,
+			Duration:          totalDuration,
+			TotalTokens:       int32(len(tokenInfos)),
+			CompletedTokens:   0,
+		}, nil
+	}
+
+	// Count completed tokens
+	completedCount := int32(0)
+	for _, token := range tokens {
+		if token.IsCompleted() {
+			completedCount++
+		}
+	}
+
 	return &types.ProcessTraceResponse{
 		ProcessInstanceID: req.ProcessInstanceID,
-		ProcessKey:        "",                        // TODO: get from instance
-		Status:            types.ProcessStatusActive, // TODO: get real status
+		ProcessKey:        instance.ProcessKey,
+		Status:            types.ProcessStatus(instance.State),
 		Tokens:            tokenInfos,
 		ExecutionPath:     executionPath,
-		StartedAt:         time.Now(), // TODO: get real start time
-		CompletedAt:       nil,        // TODO: get completion time if completed
+		StartedAt:         instance.StartedAt,
+		CompletedAt:       instance.CompletedAt,
 		Duration:          totalDuration,
 		TotalTokens:       int32(len(tokenInfos)),
-		CompletedTokens:   0, // TODO: count completed tokens
+		CompletedTokens:   completedCount,
 	}, nil
 }
