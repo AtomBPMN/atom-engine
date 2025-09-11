@@ -203,6 +203,20 @@ func (cm *CorrelationManager) PublishMessage(ctx context.Context, tenantID, mess
 					logger.String("error", err.Error()))
 			}
 		}
+
+		// Delete subscription after successful correlation for intermediate catch events
+		// Удаляем подписку после успешной корреляции для intermediate catch events
+		if isIntermediateCatchEvent {
+			if err := cm.storage.DeleteProcessMessageSubscription(ctx, targetSubscription.ID); err != nil {
+				cm.logger.Error("Failed to delete subscription after correlation",
+					logger.String("subscription_id", targetSubscription.ID),
+					logger.String("error", err.Error()))
+			} else {
+				cm.logger.Info("Subscription deleted after successful correlation",
+					logger.String("subscription_id", targetSubscription.ID),
+					logger.String("message_name", messageName))
+			}
+		}
 	} else {
 		// Buffer message if no active subscription found
 		bufferedMessage := &models.BufferedMessage{

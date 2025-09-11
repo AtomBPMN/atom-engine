@@ -280,7 +280,7 @@ func (jc *JobCallbacks) handleJobBPMNError(token *models.Token, jobID, elementID
 				logger.String("error", err.Error()))
 		}
 
-		return fmt.Errorf("BPMN error %s: %s", errorCode, errorMessage)
+		return nil
 	}
 
 	logger.Info("Found matching error boundary for BPMN error, activating flow",

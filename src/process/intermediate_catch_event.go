@@ -48,19 +48,32 @@ func (icee *IntermediateCatchEventExecutor) Execute(token *models.Token, element
 
 	// Check for event definitions to determine event type
 	eventDefinitions, hasEventDefs := element["event_definitions"]
+	logger.Info("DEBUG: Checking event definitions",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID),
+		logger.Bool("has_event_defs", hasEventDefs))
 	if hasEventDefs {
 		if eventDefList, ok := eventDefinitions.([]interface{}); ok {
-			for _, eventDef := range eventDefList {
+			logger.Info("DEBUG: Found event definitions list",
+				logger.String("token_id", token.TokenID),
+				logger.Int("count", len(eventDefList)))
+			for i, eventDef := range eventDefList {
 				if eventDefMap, ok := eventDef.(map[string]interface{}); ok {
 					eventType, _ := eventDefMap["type"].(string)
+					logger.Info("DEBUG: Processing event definition",
+						logger.String("token_id", token.TokenID),
+						logger.Int("index", i),
+						logger.String("event_type", eventType))
 
 					// Handle timer events
 					if eventType == "timerEventDefinition" {
+						logger.Info("DEBUG: Handling timer event", logger.String("token_id", token.TokenID))
 						return icee.timerHandler.HandleTimerEvent(token, element, eventDefMap)
 					}
 
 					// Handle message events
 					if eventType == "messageEventDefinition" {
+						logger.Info("DEBUG: Handling message event", logger.String("token_id", token.TokenID))
 						return icee.messageHandler.HandleMessageEvent(token, element, eventDefMap)
 					}
 

@@ -176,6 +176,7 @@ type Component struct {
 // NewComponent creates new process component with SRP architecture
 // Создает новый компонент процессов с SRP архитектурой
 func NewComponent(storage storage.Storage) *Component {
+	logger.Info("DEBUG: NewComponent called")
 	ctx, cancel := context.WithCancel(context.Background())
 
 	comp := &Component{
@@ -198,8 +199,11 @@ func NewComponent(storage storage.Storage) *Component {
 	comp.signalManager = NewSignalManager(comp)
 
 	// Initialize core components
+	logger.Info("DEBUG: About to create BPMNHelper")
 	comp.bpmnHelper = NewBPMNHelper(storage)
+	logger.Info("DEBUG: About to create Engine")
 	comp.engine = NewEngine(storage, comp)
+	logger.Info("DEBUG: Engine created successfully")
 
 	return comp
 }

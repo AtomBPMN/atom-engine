@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:modeler="http://camunda.org/schema/modeler/1.0" id="Definitions_14fehxq" targetNamespace="http://bpmn.io/schema/bpmn" exporter="Camunda Modeler" exporterVersion="5.37.0" modeler:executionPlatform="Camunda Cloud" modeler:executionPlatformVersion="8.7.0">
+  <bpmn:collaboration id="Collaboration_0l13amu">
+    <bpmn:participant id="Participant_18mtp8a" name="Process 1 Call Activity" processRef="Process_1_Call_Activity">
+      <bpmn:documentation>Процесс для Call_Activity_L6_way_2</bpmn:documentation>
+    </bpmn:participant>
+  </bpmn:collaboration>
+  <bpmn:process id="Process_1_Call_Activity" name="Process 1 Call Activity" isExecutable="true">
+    <bpmn:extensionElements>
+      <zeebe:versionTag value="v100" />
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="Call_Activity_Process_1_Start" name="Call Activity Process 1 Start">
+      <bpmn:outgoing>Flow_1qxdw0i</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:endEvent id="Call_Activity_Process_1_END" name="Call Activity Process 1 END">
+      <bpmn:incoming>Flow_0ehnqih</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:intermediateCatchEvent id="Call_Activity_Process_1_Event_timer" name="Call Activity Process 1 Event timer">
+      <bpmn:incoming>Flow_1qxdw0i</bpmn:incoming>
+      <bpmn:outgoing>Flow_0ehnqih</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="TimerEventDefinition_1cez502">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT20s</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="Flow_1qxdw0i" sourceRef="Call_Activity_Process_1_Start" targetRef="Call_Activity_Process_1_Event_timer" />
+    <bpmn:sequenceFlow id="Flow_0ehnqih" sourceRef="Call_Activity_Process_1_Event_timer" targetRef="Call_Activity_Process_1_END" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_0l13amu">
+      <bpmndi:BPMNShape id="Participant_18mtp8a_di" bpmnElement="Participant_18mtp8a" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="600" height="250" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0brunja_di" bpmnElement="Call_Activity_Process_1_Start">
+        <dc:Bounds x="222" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="203" y="235" width="76" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_01zvw98_di" bpmnElement="Call_Activity_Process_1_END">
+        <dc:Bounds x="692" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="673" y="235" width="76" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Event_0w6g6b3_di" bpmnElement="Call_Activity_Process_1_Event_timer">
+        <dc:Bounds x="452" y="192" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="431" y="235" width="81" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1qxdw0i_di" bpmnElement="Flow_1qxdw0i">
+        <di:waypoint x="258" y="210" />
+        <di:waypoint x="452" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_0ehnqih_di" bpmnElement="Flow_0ehnqih">
+        <di:waypoint x="488" y="210" />
+        <di:waypoint x="692" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

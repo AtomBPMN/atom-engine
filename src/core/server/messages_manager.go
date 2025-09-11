@@ -68,10 +68,22 @@ func (c *Core) handleMessagesResponse(response string) {
 
 		// Forward message callback to process component if it's a correlation event
 		// Передаем message callback в process component если это событие корреляции
+		logger.Info("🔍 [DEBUG] Checking correlation event forwarding",
+			logger.String("event_type", messageResp.EventType),
+			logger.Bool("is_correlation", messageResp.EventType == "correlation"),
+			logger.Bool("process_comp_exists", c.processComp != nil))
+
 		if messageResp.EventType == "correlation" && c.processComp != nil {
-			logger.Info("Forwarding correlation callback to process component",
+			logger.Info("🔍 [DEBUG] About to forward correlation callback to process component - CRITICAL POINT",
+				logger.String("message_id", messageResp.MessageID),
+				logger.String("message_name", messageResp.MessageName),
+				logger.String("token_id", messageResp.TokenID),
+				logger.String("correlation_key", messageResp.CorrelationKey))
+
+			logger.Info("🚀 [DEBUG] Calling c.processComp.HandleMessageCallback - CRASH POINT",
 				logger.String("message_id", messageResp.MessageID),
 				logger.String("token_id", messageResp.TokenID))
+
 			if err := c.processComp.HandleMessageCallback(messageResp.MessageID, messageResp.MessageName, messageResp.CorrelationKey, messageResp.TokenID, messageResp.Variables); err != nil {
 				logger.Error("Failed to handle message callback in process component",
 					logger.String("message_id", messageResp.MessageID),

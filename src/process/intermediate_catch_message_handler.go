@@ -393,21 +393,8 @@ func (icmh *IntermediateCatchMessageHandler) isMessageCorrelatedToken(token *mod
 		return true
 	}
 
-	// Fallback: check if token was updated recently and not waiting for message anymore
-	// Дополнительная проверка: токен обновлен недавно и больше не ждет сообщение
-	timeSinceCreated := time.Since(token.CreatedAt)
-	timeSinceUpdated := time.Since(token.UpdatedAt)
-
-	// If token was updated recently (within 10 seconds), is not waiting, and created earlier, it's likely from message correlation
-	// Если токен обновлялся недавно (в течение 10 секунд), не ждет, и создан раньше, скорее всего это message correlation
-	if timeSinceUpdated < time.Second*10 && timeSinceCreated > time.Second*10 && !token.IsWaiting() {
-		logger.Info("Token has recent update and not waiting - likely activated by message correlation",
-			logger.String("token_id", token.TokenID),
-			logger.String("time_since_created", timeSinceCreated.String()),
-			logger.String("time_since_updated", timeSinceUpdated.String()))
-		return true
-	}
-
+	// No correlation marker found - this is first-time execution of intermediate catch event
+	// Маркер корреляции не найден - это первое выполнение intermediate catch event
 	logger.Info("Token appears to be first-time execution of intermediate catch event",
 		logger.String("token_id", token.TokenID))
 	return false

@@ -96,6 +96,13 @@ func (ep *ExecutionProcessor) processExecutionResult(token *models.Token, result
 
 			// Execute new token asynchronously
 			go func(t *models.Token) {
+				defer func() {
+					if r := recover(); r != nil {
+						logger.Error("Panic in token execution goroutine",
+							logger.String("token_id", t.TokenID),
+							logger.Any("panic", r))
+					}
+				}()
 				if err := ep.component.ExecuteToken(t); err != nil {
 					logger.Error("Failed to execute new token", logger.String("error", err.Error()))
 				}
@@ -164,6 +171,13 @@ func (ep *ExecutionProcessor) moveTokenToNextElements(token *models.Token, nextE
 
 		// Execute new token asynchronously
 		go func(t *models.Token) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Panic in parallel token execution goroutine",
+						logger.String("token_id", t.TokenID),
+						logger.Any("panic", r))
+				}
+			}()
 			if err := ep.component.ExecuteToken(t); err != nil {
 				logger.Error("Failed to execute parallel token", logger.String("error", err.Error()))
 			}

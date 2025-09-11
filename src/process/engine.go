@@ -42,7 +42,9 @@ func NewEngine(storage storage.Storage, component ComponentInterface) *Engine {
 	engine.executionProcessor = NewExecutionProcessor(storage, component)
 
 	// Register built-in element executors
+	logger.Info("DEBUG: About to register executors")
 	engine.executorRegistry.registerExecutors()
+	logger.Info("DEBUG: Executors registration completed")
 
 	return engine
 }
@@ -79,31 +81,36 @@ func (e *Engine) Stop() error {
 // ExecuteToken executes token at current element
 // Выполняет токен на текущем элементе
 func (e *Engine) ExecuteToken(token *models.Token) error {
-	logger.Info("=== EXECUTING TOKEN ===",
+	logger.Info("🚀 [DEBUG] === EXECUTING TOKEN START ===",
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID),
 		logger.String("token_state", string(token.State)),
-		logger.String("process_instance_id", token.ProcessInstanceID))
+		logger.String("process_instance_id", token.ProcessInstanceID),
+		logger.String("waiting_for", token.WaitingFor),
+		logger.Any("variables", token.Variables))
 
-	logger.Info("DEBUG: ExecuteToken called",
+	logger.Info("🔍 [DEBUG] ExecuteToken entry point - critical checkpoint",
 		logger.String("token_id", token.TokenID),
-		logger.String("element_id", token.CurrentElementID))
+		logger.String("element_id", token.CurrentElementID),
+		logger.String("process_key", token.ProcessKey))
 
 	// Load process definition
-	logger.Info("Loading process definition",
+	logger.Info("🔍 [DEBUG] Loading process definition from storage",
 		logger.String("token_id", token.TokenID),
 		logger.String("process_key", token.ProcessKey))
 
 	processData, err := e.storage.LoadBPMNProcess(token.ProcessKey)
 	if err != nil {
-		logger.Error("Failed to load process definition",
+		logger.Error("🔴 [DEBUG] Failed to load process definition - CRITICAL ERROR",
 			logger.String("process_key", token.ProcessKey),
+			logger.String("token_id", token.TokenID),
 			logger.String("error", err.Error()))
 		return fmt.Errorf("failed to load process definition: %w", err)
 	}
 
-	logger.Info("Process definition loaded successfully",
+	logger.Info("✅ [DEBUG] Process definition loaded successfully",
 		logger.String("process_key", token.ProcessKey),
+		logger.String("token_id", token.TokenID),
 		logger.Int("data_length", len(processData)))
 
 	// DEBUG: Output raw JSON data from database
@@ -111,17 +118,23 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 		logger.String("process_key", token.ProcessKey),
 		logger.String("json_data", string(processData)))
 
+	logger.Info("🔍 [DEBUG] Parsing process definition JSON",
+		logger.String("token_id", token.TokenID),
+		logger.String("process_key", token.ProcessKey))
+
 	var bpmnProcess models.BPMNProcess
 	if err := json.Unmarshal(processData, &bpmnProcess); err != nil {
-		logger.Error("Failed to parse process definition",
+		logger.Error("🔴 [DEBUG] Failed to parse process definition - JSON UNMARSHAL ERROR",
 			logger.String("process_key", token.ProcessKey),
+			logger.String("token_id", token.TokenID),
 			logger.String("parse_error", err.Error()),
-			logger.String("raw_json", string(processData)))
+			logger.String("raw_json_preview", string(processData[:min(200, len(processData))])))
 		return fmt.Errorf("failed to parse process definition: %w", err)
 	}
 
-	logger.Info("Process definition parsed",
+	logger.Info("✅ [DEBUG] Process definition parsed successfully",
 		logger.String("process_key", token.ProcessKey),
+		logger.String("token_id", token.TokenID),
 		logger.String("process_id", bpmnProcess.ProcessID),
 		logger.String("process_name", bpmnProcess.ProcessName),
 		logger.Int("elements_count", len(bpmnProcess.Elements)))
@@ -136,9 +149,10 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 	}
 
 	// Get current element
-	logger.Info("Looking for element",
+	logger.Info("🔍 [DEBUG] Looking for element in process",
 		logger.String("token_id", token.TokenID),
-		logger.String("element_id", token.CurrentElementID))
+		logger.String("element_id", token.CurrentElementID),
+		logger.String("process_key", token.ProcessKey))
 
 	element, exists := bpmnProcess.Elements[token.CurrentElementID]
 	if !exists {
@@ -147,11 +161,18 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 		for elementID := range bpmnProcess.Elements {
 			availableElements = append(availableElements, elementID)
 		}
-		logger.Error("Element not found in process",
+		logger.Error("🔴 [DEBUG] Element not found in process - CRITICAL ERROR",
 			logger.String("element_id", token.CurrentElementID),
+			logger.String("token_id", token.TokenID),
+			logger.String("process_key", token.ProcessKey),
+			logger.Int("total_elements", len(bpmnProcess.Elements)),
 			logger.String("available_elements", fmt.Sprintf("%v", availableElements)))
 		return fmt.Errorf("element not found: %s", token.CurrentElementID)
 	}
+
+	logger.Info("✅ [DEBUG] Element found in process",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
 
 	// Check if this is a sequence flow - handle it directly
 	// Проверяем является ли это sequence flow - обрабатываем напрямую
@@ -225,9 +246,14 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 	}
 
 	// Execute element
+	logger.Info("🚀 [DEBUG] About to execute element - CRITICAL EXECUTION POINT",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID),
+		logger.String("element_type", elementType))
+
 	result, err := executor.Execute(token, elementMap)
 	if err != nil {
-		logger.Error("Element execution failed",
+		logger.Error("🔴 [DEBUG] Element execution failed - CRITICAL ERROR",
 			logger.String("token_id", token.TokenID),
 			logger.String("element_id", token.CurrentElementID),
 			logger.String("element_type", elementType),
@@ -250,12 +276,28 @@ func (e *Engine) ExecuteToken(token *models.Token) error {
 		return fmt.Errorf("element execution failed: %w", err)
 	}
 
+	logger.Info("✅ [DEBUG] Element execution successful",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID),
+		logger.String("element_type", elementType),
+		logger.Bool("success", result.Success),
+		logger.Bool("completed", result.Completed),
+		logger.String("waiting_for", result.WaitingFor))
+
 	// Process execution result
+	logger.Info("🔍 [DEBUG] Processing execution result",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
 	if err := e.executionProcessor.processExecutionResult(token, result, &bpmnProcess); err != nil {
+		logger.Error("🔴 [DEBUG] Failed to process execution result - CRITICAL ERROR",
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("error", err.Error()))
 		return fmt.Errorf("failed to process execution result: %w", err)
 	}
 
-	logger.Info("=== TOKEN EXECUTION COMPLETED ===",
+	logger.Info("🎉 [DEBUG] === TOKEN EXECUTION COMPLETED SUCCESSFULLY ===",
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID),
 		logger.String("element_type", elementType),
@@ -282,15 +324,19 @@ func (e *Engine) GetExecutor(elementType string) (ElementExecutor, bool) {
 // HandleMessageCallback handles message correlation callback
 // Обрабатывает callback корреляции сообщения
 func (e *Engine) HandleMessageCallback(messageID, messageName, correlationKey, tokenID string, variables map[string]interface{}) error {
-	logger.Info("Engine handling message callback",
+	logger.Info("🔍 [DEBUG] Engine HandleMessageCallback START",
 		logger.String("message_id", messageID),
 		logger.String("message_name", messageName),
 		logger.String("correlation_key", correlationKey),
-		logger.String("token_id", tokenID))
+		logger.String("token_id", tokenID),
+		logger.Any("variables", variables))
 
 	if e.storage == nil {
+		logger.Error("🔴 [DEBUG] Storage not available in HandleMessageCallback")
 		return fmt.Errorf("storage not available")
 	}
+
+	logger.Info("✅ [DEBUG] Storage available, proceeding with message callback")
 
 	// Check if this is Message Start Event callback (empty token_id)
 	// Проверяем является ли это callback для Message Start Event (пустой token_id)
@@ -303,19 +349,35 @@ func (e *Engine) HandleMessageCallback(messageID, messageName, correlationKey, t
 
 	// Load the specific token that is waiting for this message (for intermediate catch events)
 	// Загружаем конкретный токен который ожидает это сообщение (для intermediate catch events)
+	logger.Info("🔍 [DEBUG] Loading token from storage",
+		logger.String("token_id", tokenID))
+
 	token, err := e.storage.LoadToken(tokenID)
 	if err != nil {
-		logger.Error("Failed to load token for message callback",
+		logger.Error("🔴 [DEBUG] Failed to load token for message callback",
 			logger.String("message_id", messageID),
 			logger.String("token_id", tokenID),
 			logger.String("error", err.Error()))
 		return fmt.Errorf("failed to load token %s: %w", tokenID, err)
 	}
 
+	logger.Info("✅ [DEBUG] Token loaded successfully",
+		logger.String("token_id", tokenID),
+		logger.String("token_state", string(token.State)),
+		logger.String("token_waiting_for", token.WaitingFor),
+		logger.String("current_element_id", token.CurrentElementID),
+		logger.String("process_instance_id", token.ProcessInstanceID))
+
 	// Check if token is waiting for this message
 	expectedWaitingFor := fmt.Sprintf("message:%s", messageName)
+	logger.Info("🔍 [DEBUG] Validating token waiting state",
+		logger.String("token_id", tokenID),
+		logger.String("expected_waiting_for", expectedWaitingFor),
+		logger.String("actual_waiting_for", token.WaitingFor),
+		logger.Bool("is_waiting", token.IsWaiting()))
+
 	if !token.IsWaiting() || token.WaitingFor != expectedWaitingFor {
-		logger.Warn("Token is not waiting for this message",
+		logger.Error("🔴 [DEBUG] Token validation failed - not waiting for this message",
 			logger.String("message_id", messageID),
 			logger.String("token_id", tokenID),
 			logger.String("message_name", messageName),
@@ -325,7 +387,7 @@ func (e *Engine) HandleMessageCallback(messageID, messageName, correlationKey, t
 		return fmt.Errorf("token %s is not waiting for message %s", tokenID, messageName)
 	}
 
-	logger.Info("Token confirmed waiting for message",
+	logger.Info("✅ [DEBUG] Token validation passed - confirmed waiting for message",
 		logger.String("token_id", tokenID),
 		logger.String("message_name", messageName))
 
@@ -336,28 +398,61 @@ func (e *Engine) HandleMessageCallback(messageID, messageName, correlationKey, t
 
 	// Clear waiting state and merge message variables
 	// Очищаем состояние ожидания и объединяем переменные сообщения
+	logger.Info("🔍 [DEBUG] Clearing token waiting state and merging variables",
+		logger.String("token_id", tokenID))
+
 	token.ClearWaitingFor()
+	logger.Info("✅ [DEBUG] Token waiting state cleared",
+		logger.String("token_id", tokenID),
+		logger.String("new_waiting_for", token.WaitingFor))
+
 	if variables != nil {
-		token.MergeVariables(variables)
-		logger.Info("Message variables merged to token",
+		logger.Info("🔍 [DEBUG] Merging message variables to token",
 			logger.String("token_id", tokenID),
-			logger.Any("variables", variables))
+			logger.Any("incoming_variables", variables))
+
+		token.MergeVariables(variables)
+		logger.Info("✅ [DEBUG] Message variables merged successfully",
+			logger.String("token_id", tokenID),
+			logger.Any("merged_variables", token.Variables))
+	} else {
+		logger.Info("ℹ️ [DEBUG] No variables to merge", logger.String("token_id", tokenID))
 	}
 
 	// Mark token as message correlated for future intermediate catch event detection
 	// Отмечаем токен как активированный через message correlation для обнаружения в intermediate catch events
+	logger.Info("🔍 [DEBUG] Marking token as message correlated",
+		logger.String("token_id", tokenID))
+
 	if token.Variables == nil {
 		token.Variables = make(map[string]interface{})
+		logger.Info("✅ [DEBUG] Initialized empty variables map", logger.String("token_id", tokenID))
 	}
 	token.Variables["_correlatedBy"] = "message"
+	logger.Info("✅ [DEBUG] Token marked as message correlated", logger.String("token_id", tokenID))
 
 	// Continue token execution from current element
 	// Продолжаем выполнение токена с текущего элемента
-	logger.Info("Continuing token execution after message correlation",
+	logger.Info("🚀 [DEBUG] About to call ExecuteToken - CRITICAL POINT",
+		logger.String("token_id", tokenID),
+		logger.String("element_id", token.CurrentElementID),
+		logger.String("token_state", string(token.State)),
+		logger.String("process_instance_id", token.ProcessInstanceID))
+
+	err = e.ExecuteToken(token)
+	if err != nil {
+		logger.Error("🔴 [DEBUG] ExecuteToken failed in HandleMessageCallback",
+			logger.String("token_id", tokenID),
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("error", err.Error()))
+		return err
+	}
+
+	logger.Info("🎉 [DEBUG] HandleMessageCallback completed successfully",
 		logger.String("token_id", tokenID),
 		logger.String("element_id", token.CurrentElementID))
 
-	return e.ExecuteToken(token)
+	return nil
 }
 
 // handleMessageStartEventCallback handles Message Start Event callback

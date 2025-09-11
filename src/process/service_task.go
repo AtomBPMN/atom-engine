@@ -758,7 +758,7 @@ func (ste *ServiceTaskExecutor) getOutgoingFlows(boundaryEvent map[string]interf
 func (ste *ServiceTaskExecutor) evaluateTimerExpression(expression string, token *models.Token) (interface{}, error) {
 	// If not a FEEL expression (doesn't start with =), return as is
 	// Если не FEEL expression (не начинается с =), возвращаем как есть
-	if expression == "" || expression[0] != '=' {
+	if expression == "" || len(expression) == 0 || expression[0] != '=' {
 		return expression, nil
 	}
 
