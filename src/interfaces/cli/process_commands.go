@@ -391,3 +391,205 @@ func (d *DaemonCommand) ProcessList() error {
 
 	return nil
 }
+
+// ProcessInfo gets complete process instance information via gRPC
+// Получает полную информацию об экземпляре процесса через gRPC
+func (d *DaemonCommand) ProcessInfo() error {
+	logger.Debug("Getting process info")
+
+	if len(os.Args) < 4 {
+		logger.Error("Invalid process info arguments", logger.Int("args_count", len(os.Args)))
+		return fmt.Errorf("usage: atomd process info <instance_id>")
+	}
+
+	instanceID := os.Args[3]
+	logger.Debug("Process info request", logger.String("instance_id", instanceID))
+
+	conn, err := d.grpcClient.Connect()
+	if err != nil {
+		logger.Error("Failed to connect for process info", logger.String("error", err.Error()))
+		return fmt.Errorf("failed to connect to daemon: %w", err)
+	}
+	defer conn.Close()
+
+	client := processpb.NewProcessServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	response, err := client.GetProcessInstanceInfo(ctx, &processpb.GetProcessInstanceInfoRequest{
+		InstanceId: instanceID,
+	})
+	if err != nil {
+		logger.Error("Failed to get process info via gRPC",
+			logger.String("instance_id", instanceID),
+			logger.String("error", err.Error()))
+		return fmt.Errorf("failed to get process instance info: %w", err)
+	}
+
+	if !response.Success {
+		logger.Warn("Process info failed",
+			logger.String("instance_id", instanceID),
+			logger.String("message", response.Message))
+		return fmt.Errorf("failed to get process instance info: %s", response.Message)
+	}
+
+	logger.Debug("Process info retrieved",
+		logger.String("instance_id", response.InstanceId),
+		logger.String("status", response.Status))
+
+	// Print process basic information
+	fmt.Printf("Process Instance Complete Information\n")
+	fmt.Printf("====================================\n\n")
+
+	fmt.Printf("BASIC INFORMATION:\n")
+	fmt.Printf("  Instance ID:      %s\n", response.InstanceId)
+	fmt.Printf("  Process Key:      %s\n", response.ProcessKey)
+	fmt.Printf("  Status:           %s\n", colorizeStatus(response.Status))
+	fmt.Printf("  Current Activity: %s\n", response.CurrentActivity)
+	fmt.Printf("  Started At:       %s\n", time.Unix(response.StartedAt, 0).Format("2006-01-02 15:04:05"))
+	fmt.Printf("  Updated At:       %s\n", time.Unix(response.UpdatedAt, 0).Format("2006-01-02 15:04:05"))
+
+	// Print variables
+	if len(response.Variables) > 0 {
+		fmt.Printf("\nVARIABLES:\n")
+		for key, value := range response.Variables {
+			fmt.Printf("  %s: %s\n", key, value)
+		}
+	}
+
+	// Print tokens information
+	if len(response.Tokens) > 0 {
+		fmt.Printf("\nTOKENS (%d):\n", len(response.Tokens))
+		for _, token := range response.Tokens {
+			fmt.Printf("  ID: %s\n", token.TokenId)
+			fmt.Printf("    Element: %s\n", token.CurrentElementId)
+			fmt.Printf("    State: %s\n", colorizeStatus(token.State))
+			if token.WaitingFor != "" {
+				fmt.Printf("    Waiting For: %s\n", token.WaitingFor)
+			}
+			fmt.Printf("    Created: %s\n", time.Unix(token.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+			fmt.Printf("\n")
+		}
+	} else {
+		fmt.Printf("\nTOKENS: None\n")
+	}
+
+	// Print external services details
+	if response.ExternalServices != nil {
+		// Print timers
+		if len(response.ExternalServices.Timers) > 0 {
+			fmt.Printf("TIMERS (%d):\n", len(response.ExternalServices.Timers))
+			for _, timer := range response.ExternalServices.Timers {
+				fmt.Printf("  ID: %s\n", timer.TimerId)
+				fmt.Printf("    Element: %s\n", timer.ElementId)
+				fmt.Printf("    Type: %s\n", timer.TimerType)
+				fmt.Printf("    Status: %s\n", colorizeStatus(timer.Status))
+				if timer.TimeDuration != "" {
+					fmt.Printf("    Duration: %s\n", timer.TimeDuration)
+				}
+				if timer.TimeCycle != "" {
+					fmt.Printf("    Cycle: %s\n", timer.TimeCycle)
+				}
+				fmt.Printf("    Scheduled: %s\n", time.Unix(timer.ScheduledAt, 0).Format("2006-01-02 15:04:05"))
+				if timer.RemainingSeconds > 0 {
+					fmt.Printf("    Remaining: %ds\n", timer.RemainingSeconds)
+				}
+				fmt.Printf("\n")
+			}
+		} else {
+			fmt.Printf("TIMERS: None\n\n")
+		}
+
+		// Print jobs
+		if len(response.ExternalServices.Jobs) > 0 {
+			fmt.Printf("JOBS (%d):\n", len(response.ExternalServices.Jobs))
+			for _, job := range response.ExternalServices.Jobs {
+				fmt.Printf("  Key: %s\n", job.Key)
+				fmt.Printf("    Type: %s\n", job.Type)
+				fmt.Printf("    Element: %s\n", job.ElementId)
+				fmt.Printf("    Status: %s\n", colorizeStatus(job.Status))
+				if job.Worker != "" {
+					fmt.Printf("    Worker: %s\n", job.Worker)
+				}
+				fmt.Printf("    Retries: %d\n", job.Retries)
+				fmt.Printf("    Created: %s\n", time.Unix(job.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+				if job.ErrorMessage != "" {
+					fmt.Printf("    Error: %s\n", job.ErrorMessage)
+				}
+				fmt.Printf("\n")
+			}
+		} else {
+			fmt.Printf("JOBS: None\n\n")
+		}
+
+		// Print message subscriptions
+		if len(response.ExternalServices.MessageSubscriptions) > 0 {
+			fmt.Printf("MESSAGE SUBSCRIPTIONS (%d):\n", len(response.ExternalServices.MessageSubscriptions))
+			for _, sub := range response.ExternalServices.MessageSubscriptions {
+				fmt.Printf("  ID: %s\n", sub.Id)
+				fmt.Printf("    Message: %s\n", sub.MessageName)
+				if sub.CorrelationKey != "" {
+					fmt.Printf("    Correlation Key: %s\n", sub.CorrelationKey)
+				}
+				fmt.Printf("    Start Event: %s\n", sub.StartEventId)
+				fmt.Printf("    Active: %t\n", sub.IsActive)
+				fmt.Printf("    Created: %s\n", time.Unix(sub.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+				fmt.Printf("\n")
+			}
+		} else {
+			fmt.Printf("MESSAGE SUBSCRIPTIONS: None\n\n")
+		}
+
+		// Print buffered messages
+		if len(response.ExternalServices.BufferedMessages) > 0 {
+			fmt.Printf("BUFFERED MESSAGES (%d):\n", len(response.ExternalServices.BufferedMessages))
+			for _, msg := range response.ExternalServices.BufferedMessages {
+				fmt.Printf("  ID: %s\n", msg.Id)
+				fmt.Printf("    Name: %s\n", msg.Name)
+				if msg.CorrelationKey != "" {
+					fmt.Printf("    Correlation Key: %s\n", msg.CorrelationKey)
+				}
+				if msg.ElementId != "" {
+					fmt.Printf("    Element: %s\n", msg.ElementId)
+				}
+				fmt.Printf("    Published: %s\n", time.Unix(msg.PublishedAt, 0).Format("2006-01-02 15:04:05"))
+				fmt.Printf("    Expires: %s\n", time.Unix(msg.ExpiresAt, 0).Format("2006-01-02 15:04:05"))
+				if msg.Reason != "" {
+					fmt.Printf("    Reason: %s\n", msg.Reason)
+				}
+				fmt.Printf("\n")
+			}
+		} else {
+			fmt.Printf("BUFFERED MESSAGES: None\n\n")
+		}
+
+		// Print incidents
+		if len(response.ExternalServices.Incidents) > 0 {
+			fmt.Printf("INCIDENTS (%d):\n", len(response.ExternalServices.Incidents))
+			for _, incident := range response.ExternalServices.Incidents {
+				fmt.Printf("  ID: %s\n", incident.Id)
+				fmt.Printf("    Type: %s\n", incident.Type)
+				fmt.Printf("    Status: %s\n", colorizeStatus(incident.Status))
+				fmt.Printf("    Message: %s\n", incident.Message)
+				if incident.ErrorCode != "" {
+					fmt.Printf("    Error Code: %s\n", incident.ErrorCode)
+				}
+				if incident.ElementId != "" {
+					fmt.Printf("    Element: %s\n", incident.ElementId)
+				}
+				if incident.JobKey != "" {
+					fmt.Printf("    Job Key: %s\n", incident.JobKey)
+				}
+				fmt.Printf("    Created: %s\n", time.Unix(incident.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+				fmt.Printf("\n")
+			}
+		} else {
+			fmt.Printf("INCIDENTS: None\n\n")
+		}
+	}
+
+	fmt.Printf("\n")
+
+	return nil
+}

@@ -152,6 +152,8 @@ func (c *CLI) handleProcessCommand() error {
 		return c.daemon.ProcessStart()
 	case "status":
 		return c.daemon.ProcessStatus()
+	case "info":
+		return c.daemon.ProcessInfo()
 	case "cancel":
 		return c.daemon.ProcessCancel()
 	case "list":

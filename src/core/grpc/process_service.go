@@ -13,7 +13,11 @@ import (
 	"fmt"
 	"sort"
 
+	"atom-engine/proto/incidents/incidentspb"
+	"atom-engine/proto/jobs/jobspb"
+	"atom-engine/proto/messages/messagespb"
 	"atom-engine/proto/process/processpb"
+	"atom-engine/proto/timewheel/timewheelpb"
 	"atom-engine/src/core/interfaces"
 	"atom-engine/src/core/logger"
 	"atom-engine/src/core/models"
@@ -560,4 +564,197 @@ func (s *processServiceServer) GetTokenStatus(ctx context.Context, req *processp
 		Success: true,
 		Message: "token status retrieved successfully",
 	}, nil
+}
+
+// GetProcessInstanceInfo gets complete process instance information
+// Получает полную информацию об экземпляре процесса
+func (s *processServiceServer) GetProcessInstanceInfo(ctx context.Context, req *processpb.GetProcessInstanceInfoRequest) (*processpb.GetProcessInstanceInfoResponse, error) {
+	logger.Info("GetProcessInstanceInfo request",
+		logger.String("instance_id", req.InstanceId))
+
+	// Get process instance status first
+	statusResp, err := s.GetProcessInstanceStatus(ctx, &processpb.GetProcessInstanceStatusRequest{
+		InstanceId: req.InstanceId,
+	})
+	if err != nil {
+		logger.Error("Failed to get process instance status",
+			logger.String("instance_id", req.InstanceId),
+			logger.String("error", err.Error()))
+		return &processpb.GetProcessInstanceInfoResponse{
+			Success: false,
+			Message: fmt.Sprintf("failed to get process status: %v", err),
+		}, nil
+	}
+
+	// Get tokens for this process instance
+	tokensResp, err := s.ListTokens(ctx, &processpb.ListTokensRequest{
+		InstanceIdFilter: req.InstanceId,
+		PageSize:         1000,
+	})
+	if err != nil {
+		logger.Error("Failed to get tokens for process instance",
+			logger.String("instance_id", req.InstanceId),
+			logger.String("error", err.Error()))
+		tokensResp = &processpb.ListTokensResponse{
+			Tokens:  []*processpb.TokenInfo{},
+			Success: false,
+		}
+	}
+
+	// Get process key from tokens if available
+	processKey := req.InstanceId
+	if len(tokensResp.Tokens) > 0 {
+		processKey = tokensResp.Tokens[0].ProcessKey
+	}
+
+	// Get external services information
+	externalServices := &processpb.ExternalServicesInfo{}
+
+	// Get timers for this process instance
+	timewheelService := &timewheelServiceServer{core: s.core}
+	if timewheelService != nil {
+		timersResp, err := timewheelService.ListTimers(ctx, &timewheelpb.ListTimersRequest{
+			PageSize: 1000,
+		})
+		if err == nil && timersResp != nil {
+			for _, timer := range timersResp.Timers {
+				if timer.ProcessInstanceId == req.InstanceId {
+					processTimer := &processpb.ProcessTimerInfo{
+						TimerId:          timer.TimerId,
+						ElementId:        timer.ElementId,
+						TimerType:        timer.TimerType,
+						Status:           timer.Status,
+						ScheduledAt:      timer.ScheduledAt,
+						RemainingSeconds: timer.RemainingSeconds,
+						TimeDuration:     timer.TimeDuration,
+						TimeCycle:        timer.TimeCycle,
+					}
+					externalServices.Timers = append(externalServices.Timers, processTimer)
+				}
+			}
+		}
+	}
+
+	// Get jobs for this process instance
+	jobsService := &jobsServiceServer{core: s.core}
+	if jobsService != nil {
+		jobsResp, err := jobsService.ListJobs(ctx, &jobspb.ListJobsRequest{
+			ProcessInstanceId: req.InstanceId,
+			PageSize:          1000,
+		})
+		if err == nil && jobsResp != nil {
+			for _, job := range jobsResp.Jobs {
+				processJob := &processpb.ProcessJobInfo{
+					Key:          job.Key,
+					Type:         job.Type,
+					Worker:       job.Worker,
+					ElementId:    job.ElementId,
+					Status:       job.Status,
+					Retries:      job.Retries,
+					CreatedAt:    job.CreatedAt,
+					ErrorMessage: job.ErrorMessage,
+				}
+				externalServices.Jobs = append(externalServices.Jobs, processJob)
+			}
+		}
+	}
+
+	// Get message subscriptions
+	messagesService := &messagesServiceServer{core: s.core}
+	if messagesService != nil {
+		subsResp, err := messagesService.ListMessageSubscriptions(ctx, &messagespb.ListMessageSubscriptionsRequest{
+			PageSize: 1000,
+		})
+		if err == nil && subsResp != nil {
+			for _, sub := range subsResp.Subscriptions {
+				if sub.ProcessDefinitionKey == processKey {
+					processSub := &processpb.ProcessMessageSubscriptionInfo{
+						Id:             sub.Id,
+						MessageName:    sub.MessageName,
+						CorrelationKey: sub.CorrelationKey,
+						StartEventId:   sub.StartEventId,
+						IsActive:       sub.IsActive,
+						CreatedAt:      sub.CreatedAt,
+					}
+					externalServices.MessageSubscriptions = append(externalServices.MessageSubscriptions, processSub)
+				}
+			}
+		}
+	}
+
+	// Get buffered messages
+	// Reusing messagesService from above
+	if messagesService != nil {
+		bufferedResp, err := messagesService.ListBufferedMessages(ctx, &messagespb.ListBufferedMessagesRequest{
+			PageSize: 1000,
+		})
+		if err == nil && bufferedResp != nil {
+			for _, msg := range bufferedResp.Messages {
+				processMsg := &processpb.ProcessBufferedMessageInfo{
+					Id:             msg.Id,
+					Name:           msg.Name,
+					CorrelationKey: msg.CorrelationKey,
+					ElementId:      msg.ElementId,
+					PublishedAt:    msg.PublishedAt,
+					ExpiresAt:      msg.ExpiresAt,
+					Reason:         msg.Reason,
+				}
+				externalServices.BufferedMessages = append(externalServices.BufferedMessages, processMsg)
+			}
+		}
+	}
+
+	// Get incidents for this process instance
+	incidentsService := &incidentsServiceServer{core: s.core}
+	if incidentsService != nil {
+		filter := &incidentspb.IncidentFilter{
+			ProcessInstanceId: req.InstanceId,
+			PageSize:          1000,
+		}
+		incidentsResp, err := incidentsService.ListIncidents(ctx, &incidentspb.ListIncidentsRequest{
+			Filter: filter,
+		})
+		if err == nil && incidentsResp != nil {
+			for _, incident := range incidentsResp.Incidents {
+				processIncident := &processpb.ProcessIncidentInfo{
+					Id:        incident.Id,
+					Type:      incident.Type.String(),
+					Status:    incident.Status.String(),
+					Message:   incident.Message,
+					ErrorCode: incident.ErrorCode,
+					ElementId: incident.ElementId,
+					JobKey:    incident.JobKey,
+					CreatedAt: incident.CreatedAt.Seconds,
+				}
+				externalServices.Incidents = append(externalServices.Incidents, processIncident)
+			}
+		}
+	}
+
+	// Build response
+	response := &processpb.GetProcessInstanceInfoResponse{
+		Success:          true,
+		Message:          "process instance information retrieved successfully",
+		InstanceId:       statusResp.InstanceId,
+		ProcessKey:       processKey,
+		Status:           statusResp.Status,
+		CurrentActivity:  statusResp.CurrentActivity,
+		StartedAt:        statusResp.StartedAt,
+		UpdatedAt:        statusResp.UpdatedAt,
+		Variables:        statusResp.Variables,
+		Tokens:           tokensResp.Tokens,
+		ExternalServices: externalServices,
+	}
+
+	logger.Info("Process instance info retrieved successfully",
+		logger.String("instance_id", req.InstanceId),
+		logger.String("status", response.Status),
+		logger.Int("tokens_count", len(response.Tokens)),
+		logger.Int("timers_count", len(externalServices.Timers)),
+		logger.Int("jobs_count", len(externalServices.Jobs)),
+		logger.Int("incidents_count", len(externalServices.Incidents)),
+		logger.Int("subscriptions_count", len(externalServices.MessageSubscriptions)),
+		logger.Int("buffered_messages_count", len(externalServices.BufferedMessages)))
+
+	return response, nil
 }

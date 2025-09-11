@@ -31,6 +31,9 @@ service ProcessService {
   
   // Get token details
   rpc GetTokenStatus(GetTokenStatusRequest) returns (GetTokenStatusResponse);
+  
+  // Get complete process instance information
+  rpc GetProcessInstanceInfo(GetProcessInstanceInfoRequest) returns (GetProcessInstanceInfoResponse);
 }
 
 // Request for starting process instance
@@ -153,4 +156,94 @@ message GetTokenStatusResponse {
   TokenInfo token = 1;
   bool success = 2;
   string message = 3;
+}
+
+// Request for process instance complete information
+message GetProcessInstanceInfoRequest {
+  string instance_id = 1;
+}
+
+// Timer information for process instance
+message ProcessTimerInfo {
+  string timer_id = 1;
+  string element_id = 2;
+  string timer_type = 3;
+  string status = 4;
+  int64 scheduled_at = 5;
+  int64 remaining_seconds = 6;
+  string time_duration = 7;
+  string time_cycle = 8;
+}
+
+// Job information for process instance
+message ProcessJobInfo {
+  string key = 1;
+  string type = 2;
+  string worker = 3;
+  string element_id = 4;
+  string status = 5;
+  int32 retries = 6;
+  int64 created_at = 7;
+  string error_message = 8;
+}
+
+// Message subscription information for process instance
+message ProcessMessageSubscriptionInfo {
+  string id = 1;
+  string message_name = 2;
+  string correlation_key = 3;
+  string start_event_id = 4;
+  bool is_active = 5;
+  int64 created_at = 6;
+}
+
+// Buffered message information for process instance
+message ProcessBufferedMessageInfo {
+  string id = 1;
+  string name = 2;
+  string correlation_key = 3;
+  string element_id = 4;
+  int64 published_at = 5;
+  int64 expires_at = 6;
+  string reason = 7;
+}
+
+// Incident information for process instance
+message ProcessIncidentInfo {
+  string id = 1;
+  string type = 2;
+  string status = 3;
+  string message = 4;
+  string error_code = 5;
+  string element_id = 6;
+  string job_key = 7;
+  int64 created_at = 8;
+}
+
+// Detailed information for external services
+message ExternalServicesInfo {
+  repeated ProcessTimerInfo timers = 1;
+  repeated ProcessJobInfo jobs = 2;
+  repeated ProcessMessageSubscriptionInfo message_subscriptions = 3;
+  repeated ProcessBufferedMessageInfo buffered_messages = 4;
+  repeated ProcessIncidentInfo incidents = 5;
+}
+
+// Response for process instance complete information
+message GetProcessInstanceInfoResponse {
+  bool success = 1;
+  string message = 2;
+  
+  // Process basic info
+  string instance_id = 3;
+  string process_key = 4;
+  string status = 5;
+  string current_activity = 6;
+  int64 started_at = 7;
+  int64 updated_at = 8;
+  map<string, string> variables = 9;
+  
+  // Related data
+  repeated TokenInfo tokens = 10;
+  ExternalServicesInfo external_services = 11;
 }

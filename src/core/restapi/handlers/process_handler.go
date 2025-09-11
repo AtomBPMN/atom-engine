@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"atom-engine/proto/process/processpb"
 	"atom-engine/src/core/grpc"
 	"atom-engine/src/core/interfaces"
 	"atom-engine/src/core/logger"
@@ -111,6 +112,7 @@ func (h *ProcessHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware 
 		processes.POST("", h.StartProcess)
 		processes.GET("", h.ListProcesses)
 		processes.GET("/:id", h.GetProcessStatus)
+		processes.GET("/:id/info", h.GetProcessInfo)
 		processes.DELETE("/:id", h.CancelProcess)
 		processes.GET("/:id/tokens", h.GetProcessTokens)
 		processes.GET("/:id/tokens/trace", h.GetTokenTrace)
@@ -355,6 +357,292 @@ func (h *ProcessHandler) GetProcessStatus(c *gin.Context) {
 		logger.String("state", result.State))
 
 	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// GetProcessInfo handles GET /api/v1/processes/:id/info
+// @Summary Get complete process instance information
+// @Description Get detailed information about a process instance including tokens, timers, jobs, messages, and incidents
+// @Tags processes
+// @Produce json
+// @Param id path string true "Process instance ID"
+// @Success 200 {object} restmodels.APIResponse{data=map[string]interface{}}
+// @Failure 400 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 401 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 403 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 404 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Failure 500 {object} restmodels.APIResponse{error=restmodels.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/processes/{id}/info [get]
+func (h *ProcessHandler) GetProcessInfo(c *gin.Context) {
+	requestID := h.getRequestID(c)
+	instanceID := c.Param("id")
+
+	if instanceID == "" {
+		apiErr := restmodels.BadRequestError("Process instance ID is required")
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Validate instance ID format
+	if apiErr := h.validator.ValidateID(instanceID, "instance_id"); apiErr != nil {
+		c.JSON(http.StatusBadRequest, restmodels.ErrorResponse(
+			restmodels.NewValidationError("Invalid instance ID format", []restmodels.ValidationError{*apiErr}),
+			requestID))
+		return
+	}
+
+	logger.Debug("Getting complete process instance information",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID))
+
+	// For now, we'll create a simple implementation that aggregates data
+	// This is a temporary solution until we can add the method to ProcessComponent interface
+
+	// Get process status first
+	processComp := h.coreInterface.GetProcessComponent()
+	if processComp == nil {
+		apiErr := restmodels.InternalServerError("Process service not available")
+		c.JSON(http.StatusInternalServerError, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Get basic process status
+	processStatus, err := processComp.GetProcessInstanceStatus(instanceID)
+	if err != nil {
+		logger.Error("Failed to get process instance status",
+			logger.String("request_id", requestID),
+			logger.String("instance_id", instanceID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		if apiErr.Code == restmodels.ErrorCodeResourceNotFound {
+			apiErr = restmodels.ProcessNotFoundError(instanceID)
+		}
+		statusCode := restmodels.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, restmodels.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Get tokens for this process
+	tokens, tokensErr := processComp.GetTokensByProcessInstance(instanceID)
+	if tokensErr != nil {
+		logger.Warn("Failed to get tokens for process instance",
+			logger.String("request_id", requestID),
+			logger.String("instance_id", instanceID),
+			logger.String("error", tokensErr.Error()))
+		tokens = []*models.Token{} // Continue with empty tokens
+	}
+
+	// Convert process status and tokens to the response format
+	grpcResp := &processpb.GetProcessInstanceInfoResponse{
+		Success:         true,
+		Message:         "process instance information retrieved successfully",
+		InstanceId:      processStatus.InstanceID,
+		ProcessKey:      processStatus.ProcessID,
+		Status:          processStatus.State,
+		CurrentActivity: processStatus.CurrentActivity,
+		StartedAt:       processStatus.StartedAt,
+		UpdatedAt:       processStatus.UpdatedAt,
+		Variables:       h.convertVariablesToStringMap(processStatus.Variables),
+		Tokens:          h.convertTokensToProtoTokens(tokens),
+		ExternalServices: &processpb.ExternalServicesInfo{
+			// For now, empty external services - this can be enhanced later
+			Timers:               []*processpb.ProcessTimerInfo{},
+			Jobs:                 []*processpb.ProcessJobInfo{},
+			MessageSubscriptions: []*processpb.ProcessMessageSubscriptionInfo{},
+			BufferedMessages:     []*processpb.ProcessBufferedMessageInfo{},
+			Incidents:            []*processpb.ProcessIncidentInfo{},
+		},
+	}
+
+	// Convert gRPC response to JSON-friendly format
+	result := map[string]interface{}{
+		"instance_id":       grpcResp.InstanceId,
+		"process_key":       grpcResp.ProcessKey,
+		"status":            grpcResp.Status,
+		"current_activity":  grpcResp.CurrentActivity,
+		"started_at":        grpcResp.StartedAt,
+		"updated_at":        grpcResp.UpdatedAt,
+		"variables":         grpcResp.Variables,
+		"tokens":            h.convertTokensToJSON(grpcResp.Tokens),
+		"external_services": h.convertExternalServicesToJSON(grpcResp.ExternalServices),
+	}
+
+	logger.Info("Complete process instance information retrieved",
+		logger.String("request_id", requestID),
+		logger.String("instance_id", instanceID),
+		logger.String("status", grpcResp.Status),
+		logger.Int("tokens_count", len(grpcResp.Tokens)))
+
+	c.JSON(http.StatusOK, restmodels.SuccessResponse(result, requestID))
+}
+
+// convertTokensToJSON converts protobuf tokens to JSON-friendly format
+func (h *ProcessHandler) convertTokensToJSON(tokens []*processpb.TokenInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(tokens))
+	for i, token := range tokens {
+		result[i] = map[string]interface{}{
+			"token_id":            token.TokenId,
+			"process_instance_id": token.ProcessInstanceId,
+			"process_key":         token.ProcessKey,
+			"current_element_id":  token.CurrentElementId,
+			"state":               token.State,
+			"waiting_for":         token.WaitingFor,
+			"created_at":          token.CreatedAt,
+			"updated_at":          token.UpdatedAt,
+			"variables":           token.Variables,
+		}
+	}
+	return result
+}
+
+// convertExternalServicesToJSON converts protobuf external services to JSON-friendly format
+func (h *ProcessHandler) convertExternalServicesToJSON(services *processpb.ExternalServicesInfo) map[string]interface{} {
+	if services == nil {
+		return map[string]interface{}{
+			"timers":                []map[string]interface{}{},
+			"jobs":                  []map[string]interface{}{},
+			"message_subscriptions": []map[string]interface{}{},
+			"buffered_messages":     []map[string]interface{}{},
+			"incidents":             []map[string]interface{}{},
+		}
+	}
+
+	return map[string]interface{}{
+		"timers":                h.convertTimersToJSON(services.Timers),
+		"jobs":                  h.convertJobsToJSON(services.Jobs),
+		"message_subscriptions": h.convertMessageSubscriptionsToJSON(services.MessageSubscriptions),
+		"buffered_messages":     h.convertBufferedMessagesToJSON(services.BufferedMessages),
+		"incidents":             h.convertIncidentsToJSON(services.Incidents),
+	}
+}
+
+// convertTimersToJSON converts protobuf timers to JSON-friendly format
+func (h *ProcessHandler) convertTimersToJSON(timers []*processpb.ProcessTimerInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(timers))
+	for i, timer := range timers {
+		result[i] = map[string]interface{}{
+			"timer_id":          timer.TimerId,
+			"element_id":        timer.ElementId,
+			"timer_type":        timer.TimerType,
+			"status":            timer.Status,
+			"scheduled_at":      timer.ScheduledAt,
+			"remaining_seconds": timer.RemainingSeconds,
+			"time_duration":     timer.TimeDuration,
+			"time_cycle":        timer.TimeCycle,
+		}
+	}
+	return result
+}
+
+// convertJobsToJSON converts protobuf jobs to JSON-friendly format
+func (h *ProcessHandler) convertJobsToJSON(jobs []*processpb.ProcessJobInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(jobs))
+	for i, job := range jobs {
+		result[i] = map[string]interface{}{
+			"key":           job.Key,
+			"type":          job.Type,
+			"worker":        job.Worker,
+			"element_id":    job.ElementId,
+			"status":        job.Status,
+			"retries":       job.Retries,
+			"created_at":    job.CreatedAt,
+			"error_message": job.ErrorMessage,
+		}
+	}
+	return result
+}
+
+// convertMessageSubscriptionsToJSON converts protobuf message subscriptions to JSON-friendly format
+func (h *ProcessHandler) convertMessageSubscriptionsToJSON(subs []*processpb.ProcessMessageSubscriptionInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(subs))
+	for i, sub := range subs {
+		result[i] = map[string]interface{}{
+			"id":              sub.Id,
+			"message_name":    sub.MessageName,
+			"correlation_key": sub.CorrelationKey,
+			"start_event_id":  sub.StartEventId,
+			"is_active":       sub.IsActive,
+			"created_at":      sub.CreatedAt,
+		}
+	}
+	return result
+}
+
+// convertBufferedMessagesToJSON converts protobuf buffered messages to JSON-friendly format
+func (h *ProcessHandler) convertBufferedMessagesToJSON(messages []*processpb.ProcessBufferedMessageInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(messages))
+	for i, msg := range messages {
+		result[i] = map[string]interface{}{
+			"id":              msg.Id,
+			"name":            msg.Name,
+			"correlation_key": msg.CorrelationKey,
+			"element_id":      msg.ElementId,
+			"published_at":    msg.PublishedAt,
+			"expires_at":      msg.ExpiresAt,
+			"reason":          msg.Reason,
+		}
+	}
+	return result
+}
+
+// convertIncidentsToJSON converts protobuf incidents to JSON-friendly format
+func (h *ProcessHandler) convertIncidentsToJSON(incidents []*processpb.ProcessIncidentInfo) []map[string]interface{} {
+	result := make([]map[string]interface{}, len(incidents))
+	for i, incident := range incidents {
+		result[i] = map[string]interface{}{
+			"id":         incident.Id,
+			"type":       incident.Type,
+			"status":     incident.Status,
+			"message":    incident.Message,
+			"error_code": incident.ErrorCode,
+			"element_id": incident.ElementId,
+			"job_key":    incident.JobKey,
+			"created_at": incident.CreatedAt,
+		}
+	}
+	return result
+}
+
+// convertVariablesToStringMap converts interface{} variables to string map
+func (h *ProcessHandler) convertVariablesToStringMap(variables map[string]interface{}) map[string]string {
+	result := make(map[string]string)
+	for key, value := range variables {
+		if strValue, ok := value.(string); ok {
+			result[key] = strValue
+		} else {
+			result[key] = fmt.Sprintf("%v", value)
+		}
+	}
+	return result
+}
+
+// convertTokensToProtoTokens converts models.Token to protobuf TokenInfo
+func (h *ProcessHandler) convertTokensToProtoTokens(tokens []*models.Token) []*processpb.TokenInfo {
+	result := make([]*processpb.TokenInfo, len(tokens))
+	for i, token := range tokens {
+		variables := make(map[string]string)
+		for key, value := range token.Variables {
+			if strValue, ok := value.(string); ok {
+				variables[key] = strValue
+			} else {
+				variables[key] = fmt.Sprintf("%v", value)
+			}
+		}
+
+		result[i] = &processpb.TokenInfo{
+			TokenId:           token.TokenID,
+			ProcessInstanceId: token.ProcessInstanceID,
+			ProcessKey:        token.ProcessKey,
+			CurrentElementId:  token.CurrentElementID,
+			State:             string(token.State),
+			WaitingFor:        token.WaitingFor,
+			CreatedAt:         token.CreatedAt.Unix(),
+			UpdatedAt:         token.UpdatedAt.Unix(),
+			Variables:         variables,
+		}
+	}
+	return result
 }
 
 // CancelProcess handles DELETE /api/v1/processes/:id
