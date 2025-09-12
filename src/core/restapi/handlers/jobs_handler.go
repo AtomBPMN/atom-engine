@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -189,7 +190,15 @@ func (h *JobsHandler) CreateJob(c *gin.Context) {
 	}
 
 	// Extract job key from response
-	jobKey, _ := response["job_key"].(string)
+	var jobKey string
+	if result, exists := response["result"]; exists {
+		if resultMap, ok := result.(map[string]interface{}); ok {
+			if jid, ok := resultMap["job_id"].(string); ok {
+				jobKey = jid
+			}
+		}
+	}
+
 	if jobKey == "" {
 		apiErr := models.InternalServerError("Job created but key not returned")
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
@@ -351,7 +360,7 @@ func (h *JobsHandler) ListJobs(c *gin.Context) {
 		logger.String("worker", worker),
 		logger.String("state", state))
 
-	// Create list request
+	// Create list request (load all for sorting)
 	listReq := map[string]interface{}{
 		"type":       "list_jobs",
 		"request_id": requestID,
@@ -359,8 +368,8 @@ func (h *JobsHandler) ListJobs(c *gin.Context) {
 			"job_type": jobType,
 			"worker":   worker,
 			"state":    state,
-			"limit":    params.Limit,
-			"offset":   utils.GetOffset(params.Page, params.Limit),
+			"limit":    0, // Load all for sorting
+			"offset":   0,
 		},
 	}
 
@@ -373,16 +382,24 @@ func (h *JobsHandler) ListJobs(c *gin.Context) {
 		return
 	}
 
-	// Parse jobs and total count from response
+	// Parse jobs from response
 	jobs := h.parseJobsFromResponse(response)
-	totalCount := h.extractTotalCount(response)
+	totalCount := len(jobs)
+
+	// Apply sorting by created_at DESC (consistent with gRPC/CLI behavior)
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].CreatedAt > jobs[j].CreatedAt // DESC order
+	})
+
+	// Apply client-side pagination after sorting
+	paginatedJobs, paginationInfo := utils.ApplyPagination(jobs, params.Page, params.Limit)
 
 	logger.Info("Jobs listed",
 		logger.String("request_id", requestID),
 		logger.Int("count", len(jobs)),
 		logger.Int("total", totalCount))
 
-	paginatedResp := paginationHelper.CreateResponse(jobs, totalCount, params, requestID)
+	paginatedResp := models.PaginatedSuccessResponse(paginatedJobs, paginationInfo, requestID)
 	c.JSON(http.StatusOK, paginatedResp)
 }
 
@@ -1065,19 +1082,122 @@ func (h *JobsHandler) sendJobsRequest(req map[string]interface{}, requestID stri
 }
 
 func (h *JobsHandler) parseJobsFromResponse(response map[string]interface{}) []Job {
-	// Parse jobs from response - implementation details
-	return []Job{}
+	var jobs []Job
+
+	// Extract result from response
+	resultData, exists := response["result"]
+	if !exists {
+		return jobs
+	}
+
+	resultMap, ok := resultData.(map[string]interface{})
+	if !ok {
+		return jobs
+	}
+
+	// Extract jobs array from result
+	jobsData, exists := resultMap["jobs"]
+	if !exists {
+		return jobs
+	}
+
+	jobsArray, ok := jobsData.([]interface{})
+	if !ok {
+		return jobs
+	}
+
+	// Parse each job
+	for _, jobData := range jobsArray {
+		jobMap, ok := jobData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		job := h.parseJobFromMap(jobMap)
+		if job != nil {
+			jobs = append(jobs, *job)
+		}
+	}
+
+	return jobs
 }
 
 func (h *JobsHandler) parseJobFromResponse(response map[string]interface{}) *Job {
-	// Parse single job from response - implementation details
-	return nil
+	// Extract result from response
+	resultData, exists := response["result"]
+	if !exists {
+		return nil
+	}
+
+	jobMap, ok := resultData.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	return h.parseJobFromMap(jobMap)
+}
+
+func (h *JobsHandler) parseJobFromMap(jobMap map[string]interface{}) *Job {
+	job := &Job{}
+
+	// Parse string fields
+	if key, ok := jobMap["key"].(string); ok {
+		job.Key = key
+	}
+	if jobType, ok := jobMap["type"].(string); ok {
+		job.Type = jobType
+	}
+	if processInstanceID, ok := jobMap["process_instance_id"].(string); ok {
+		job.ProcessInstanceID = processInstanceID
+	}
+	if worker, ok := jobMap["worker"].(string); ok {
+		job.Worker = worker
+	}
+	if status, ok := jobMap["status"].(string); ok {
+		job.State = status
+	}
+
+	// Parse numeric fields
+	if retries, ok := jobMap["retries"].(float64); ok {
+		job.Retries = int32(retries)
+	}
+	if createdAt, ok := jobMap["created_at"].(float64); ok {
+		job.CreatedAt = int64(createdAt)
+	}
+
+	// Parse variables
+	if variables, ok := jobMap["variables"].(map[string]interface{}); ok {
+		job.Variables = variables
+	}
+
+	// Initialize empty maps if nil
+	if job.CustomHeaders == nil {
+		job.CustomHeaders = make(map[string]string)
+	}
+	if job.Variables == nil {
+		job.Variables = make(map[string]interface{})
+	}
+
+	return job
 }
 
 func (h *JobsHandler) extractTotalCount(response map[string]interface{}) int {
-	if count, ok := response["total_count"].(float64); ok {
-		return int(count)
+	// Extract result from response
+	resultData, exists := response["result"]
+	if !exists {
+		return 0
 	}
+
+	resultMap, ok := resultData.(map[string]interface{})
+	if !ok {
+		return 0
+	}
+
+	// Extract total from result
+	if total, ok := resultMap["total"].(float64); ok {
+		return int(total)
+	}
+
 	return 0
 }
 

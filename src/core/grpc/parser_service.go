@@ -480,3 +480,53 @@ func (s *ParserService) GetBPMNProcessJSON(ctx context.Context, req *parserpb.Ge
 		JsonData: string(jsonData),
 	}, nil
 }
+
+// GetBPMNProcessXML retrieves original XML content of BPMN process
+// Получает оригинальное XML содержимое BPMN процесса
+func (s *ParserService) GetBPMNProcessXML(ctx context.Context, req *parserpb.GetBPMNProcessXMLRequest) (*parserpb.GetBPMNProcessXMLResponse, error) {
+	logger.Info("Received GetBPMNProcessXML request",
+		logger.String("process_key", req.ProcessKey))
+
+	parserCompInterface := s.core.GetParserComponent()
+	if parserCompInterface == nil {
+		return &parserpb.GetBPMNProcessXMLResponse{
+			Success: false,
+			Message: "Parser component not available",
+		}, status.Error(codes.Internal, "Parser component not available")
+	}
+
+	parserComp, ok := parserCompInterface.(*parser.Component)
+	if !ok {
+		return &parserpb.GetBPMNProcessXMLResponse{
+			Success: false,
+			Message: "Invalid parser component type",
+		}, status.Error(codes.Internal, "Invalid parser component type")
+	}
+
+	xmlData, err := parserComp.GetBPMNProcessXML(req.ProcessKey)
+	if err != nil {
+		logger.Error("Failed to get BPMN process XML",
+			logger.String("process_key", req.ProcessKey),
+			logger.String("error", err.Error()))
+		return &parserpb.GetBPMNProcessXMLResponse{
+			Success: false,
+			Message: fmt.Sprintf("Failed to get BPMN process XML: %v", err),
+		}, status.Error(codes.Internal, err.Error())
+	}
+
+	// Extract filename from process key for response
+	// Извлекаем имя файла из ключа процесса для ответа
+	filename := fmt.Sprintf("%s.bpmn", req.ProcessKey)
+
+	logger.Info("Successfully retrieved BPMN process XML",
+		logger.String("process_key", req.ProcessKey),
+		logger.Int("file_size", len(xmlData)))
+
+	return &parserpb.GetBPMNProcessXMLResponse{
+		Success:  true,
+		Message:  "Successfully retrieved BPMN process XML",
+		XmlData:  string(xmlData),
+		Filename: filename,
+		FileSize: int32(len(xmlData)),
+	}, nil
+}

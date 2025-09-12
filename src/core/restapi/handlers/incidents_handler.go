@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -313,7 +314,7 @@ func (h *IncidentsHandler) ListIncidents(c *gin.Context) {
 		logger.String("status", status),
 		logger.String("type", incidentType))
 
-	// Create list request
+	// Create list request (load all for sorting)
 	listReq := map[string]interface{}{
 		"operation":           "list",
 		"status":              status,
@@ -323,8 +324,8 @@ func (h *IncidentsHandler) ListIncidents(c *gin.Context) {
 		"element_id":          elementID,
 		"job_key":             jobKey,
 		"worker_id":           workerID,
-		"limit":               params.Limit,
-		"offset":              utils.GetOffset(params.Page, params.Limit),
+		"limit":               0, // Load all for sorting
+		"offset":              0,
 	}
 
 	// Send to incidents component and get response
@@ -336,16 +337,24 @@ func (h *IncidentsHandler) ListIncidents(c *gin.Context) {
 		return
 	}
 
-	// Parse incidents and total count from response
+	// Parse incidents from response
 	incidents := h.parseIncidentsFromResponse(response)
-	totalCount := h.extractTotalCount(response)
+	totalCount := len(incidents)
+
+	// Apply sorting by created_at DESC (consistent with gRPC/CLI behavior)
+	sort.Slice(incidents, func(i, j int) bool {
+		return incidents[i].CreatedAt > incidents[j].CreatedAt // DESC order
+	})
+
+	// Apply client-side pagination after sorting
+	paginatedIncidents, paginationInfo := utils.ApplyPagination(incidents, params.Page, params.Limit)
 
 	logger.Info("Incidents listed",
 		logger.String("request_id", requestID),
 		logger.Int("count", len(incidents)),
 		logger.Int("total", totalCount))
 
-	paginatedResp := paginationHelper.CreateResponse(incidents, totalCount, params, requestID)
+	paginatedResp := models.PaginatedSuccessResponse(paginatedIncidents, paginationInfo, requestID)
 	c.JSON(http.StatusOK, paginatedResp)
 }
 

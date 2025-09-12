@@ -67,6 +67,7 @@ func showHelp() {
 	fmt.Println("  atomd bpmn delete <process_id>            Delete process")
 	fmt.Println("  atomd bpmn stats                          Show parser statistics")
 	fmt.Println("  atomd bpmn json <process_key>             Show process JSON (use PROCESS KEY)")
+	fmt.Println("  atomd bpmn xml <process_key>              Show original XML (use PROCESS KEY)")
 	fmt.Println("")
 
 	fmt.Println("Process:")
@@ -341,6 +342,7 @@ func showBPMNHelp() {
 	fmt.Println("  atomd bpmn delete <process_id>                                              - Delete BPMN process")
 	fmt.Println("  atomd bpmn stats                                                            - Show BPMN statistics")
 	fmt.Println("  atomd bpmn json <process_key>                                               - Show process JSON data (use PROCESS KEY from list)")
+	fmt.Println("  atomd bpmn xml <process_key>                                                - Show original BPMN XML (use PROCESS KEY from list)")
 	fmt.Println("  atomd bpmn help                                                             - Show this help")
 	fmt.Println("")
 	fmt.Println("List options:")
@@ -359,6 +361,7 @@ func showBPMNHelp() {
 	fmt.Println("  atomd bpmn delete my-process-1                                              - Delete process")
 	fmt.Println("  atomd bpmn stats                                                            - Show parser statistics")
 	fmt.Println("  atomd bpmn json atom-7-1k2-PVn4Y9j-CF5M                                     - Show JSON data (PROCESS KEY)")
+	fmt.Println("  atomd bpmn xml atom-7-1k2-PVn4Y9j-CF5M                                      - Show original XML (PROCESS KEY)")
 }
 
 // showIncidentHelp displays incident help information

@@ -63,6 +63,9 @@ message GetProcessInstanceStatusResponse {
   map<string, string> variables = 4;
   int64 started_at = 5;
   int64 updated_at = 6;
+  string process_id = 7;
+  string process_key = 8;
+  int32 process_version = 9;
 }
 
 // Request for canceling process instance
@@ -237,13 +240,14 @@ message GetProcessInstanceInfoResponse {
   // Process basic info
   string instance_id = 3;
   string process_key = 4;
-  string status = 5;
-  string current_activity = 6;
-  int64 started_at = 7;
-  int64 updated_at = 8;
-  map<string, string> variables = 9;
+  string bpmn_process_key = 5;
+  string status = 6;
+  string current_activity = 7;
+  int64 started_at = 8;
+  int64 updated_at = 9;
+  map<string, string> variables = 10;
   
   // Related data
-  repeated TokenInfo tokens = 10;
-  ExternalServicesInfo external_services = 11;
+  repeated TokenInfo tokens = 11;
+  ExternalServicesInfo external_services = 12;
 }

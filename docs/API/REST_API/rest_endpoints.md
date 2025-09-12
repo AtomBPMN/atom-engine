@@ -38,6 +38,7 @@
 - `GET /api/v1/bpmn/processes/:key` - Детали BPMN процесса
 - `DELETE /api/v1/bpmn/processes/:id` - Удалить BPMN процесс
 - `GET /api/v1/bpmn/processes/:key/json` - JSON данные процесса
+- `GET /api/v1/bpmn/processes/:key/xml` - Оригинальный BPMN XML
 - `GET /api/v1/bpmn/stats` - Статистика BPMN
 
 ## Process Engine
@@ -122,7 +123,7 @@
 
 ---
 
-**Всего REST endpoints**: 84
+**Всего REST endpoints**: 85
 
 **Общие характеристики**:
 - Все endpoints требуют авторизации (кроме /health)

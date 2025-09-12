@@ -59,6 +59,22 @@ type BPMNProcess struct {
 	Metadata     map[string]interface{} `json:"metadata"`
 }
 
+type BPMNProcessDetails struct {
+	ProcessKey     string           `json:"process_key"`
+	ProcessID      string           `json:"process_id"`
+	ProcessName    string           `json:"process_name"`
+	Version        string           `json:"version"`
+	ProcessVersion int32            `json:"process_version"`
+	Status         string           `json:"status"`
+	TotalElements  int32            `json:"total_elements"`
+	ElementCounts  map[string]int32 `json:"element_counts"`
+	ContentHash    string           `json:"content_hash"`
+	OriginalFile   string           `json:"original_file"`
+	CreatedAt      string           `json:"created_at"`
+	UpdatedAt      string           `json:"updated_at"`
+	ParsedAt       string           `json:"parsed_at"`
+}
+
 type BPMNStats struct {
 	TotalProcesses   int32            `json:"total_processes"`
 	ActiveProcesses  int32            `json:"active_processes"`
@@ -93,6 +109,7 @@ func (h *ParserHandler) RegisterRoutes(router *gin.RouterGroup, authMiddleware *
 		bpmn.GET("/processes/:key", h.GetProcess)
 		bpmn.DELETE("/processes/:id", h.DeleteBPMNProcess)
 		bpmn.GET("/processes/:key/json", h.GetBPMNProcessJSON)
+		bpmn.GET("/processes/:key/xml", h.GetBPMNProcessXML)
 		bpmn.GET("/stats", h.GetBPMNStats)
 	}
 }
@@ -297,7 +314,7 @@ func (h *ParserHandler) ListProcesses(c *gin.Context) {
 	// Parse pagination parameters
 	pageStr := c.DefaultQuery("page", "1")
 	limitStr := c.DefaultQuery("limit", "20")
-	tenantID := c.Query("tenant_id")
+	_ = c.Query("tenant_id") // tenantID for future implementation
 
 	paginationHelper := utils.NewPaginationHelper()
 	params, apiErr := paginationHelper.ParseAndValidate(pageStr, limitStr)
@@ -309,39 +326,76 @@ func (h *ParserHandler) ListProcesses(c *gin.Context) {
 	logger.Debug("Listing BPMN processes",
 		logger.String("request_id", requestID),
 		logger.Int("page", params.Page),
-		logger.Int("limit", params.Limit),
-		logger.String("tenant_id", tenantID))
+		logger.Int("limit", params.Limit))
 
-	// Create list request
-	listReq := map[string]interface{}{
-		"type":       "list_processes",
-		"request_id": requestID,
-		"payload": map[string]interface{}{
-			"page":      params.Page,
-			"limit":     params.Limit,
-			"tenant_id": tenantID,
-		},
+	// Get gRPC client (same as other methods in this handler)
+	client, conn, err := h.getParserGRPCClient()
+	if err != nil {
+		logger.Error("Failed to get Parser gRPC client",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
+		apiErr := models.InternalServerError("Parser service not available")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+	defer conn.Close()
+
+	// Create gRPC context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Call gRPC ListBPMNProcesses method (same as CLI)
+	grpcReq := &parserpb.ListBPMNProcessesRequest{
+		Limit:     0, // Use pagination instead
+		PageSize:  int32(params.Limit),
+		Page:      int32(params.Page),
+		SortBy:    "created_at",
+		SortOrder: "DESC",
 	}
 
-	// Send to parser component and get response
-	response, err := h.sendParserRequest(listReq, requestID)
+	resp, err := client.ListBPMNProcesses(ctx, grpcReq)
 	if err != nil {
+		logger.Error("Failed to list BPMN processes via gRPC",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
 		apiErr := h.converter.GRPCErrorToAPIError(err)
 		statusCode := models.HTTPStatusFromErrorCode(apiErr.Code)
 		c.JSON(statusCode, models.ErrorResponse(apiErr, requestID))
 		return
 	}
 
-	// Parse processes from response
-	processes := h.parseProcessList(response)
-	totalCount := h.extractTotalCount(response)
+	// Check if operation succeeded
+	if !resp.Success {
+		message := "Failed to list BPMN processes"
+		if resp.Message != "" {
+			message = resp.Message
+		}
+		apiErr := models.InternalServerError(message)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Convert gRPC response to REST API format
+	processes := h.convertGRPCProcessesToREST(resp.Processes)
 
 	logger.Info("BPMN processes listed",
 		logger.String("request_id", requestID),
 		logger.Int("count", len(processes)),
-		logger.Int("total", totalCount))
+		logger.Int("total", int(resp.TotalCount)))
 
-	paginatedResp := paginationHelper.CreateResponse(processes, totalCount, params, requestID)
+	// Create pagination info from gRPC response
+	paginationInfo := &models.PaginationInfo{
+		Page:    int(resp.Page),
+		Limit:   int(resp.PageSize),
+		Total:   int(resp.TotalCount),
+		Pages:   int(resp.TotalPages),
+		HasNext: resp.Page < resp.TotalPages,
+		HasPrev: resp.Page > 1,
+	}
+
+	paginatedResp := models.PaginatedSuccessResponse(processes, paginationInfo, requestID)
 	c.JSON(http.StatusOK, paginatedResp)
 }
 
@@ -360,10 +414,60 @@ func (h *ParserHandler) GetProcess(c *gin.Context) {
 		logger.String("request_id", requestID),
 		logger.String("process_key", processKey))
 
-	// BPMN process information is available through CLI: atomd bpmn show <process_key>
-	c.JSON(http.StatusNotImplemented, models.ErrorResponse(
-		models.NewAPIError("NOT_IMPLEMENTED", "Use CLI: atomd bpmn show <process_key>"),
-		requestID))
+	// Get gRPC connection
+	connInterface, err := h.coreInterface.GetGRPCConnection()
+	if err != nil {
+		logger.Error("Failed to get gRPC connection", logger.String("error", err.Error()))
+		apiErr := models.InternalServerError("Internal service error")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	conn, ok := connInterface.(*grpc.ClientConn)
+	if !ok {
+		logger.Error("Invalid gRPC connection type")
+		apiErr := models.InternalServerError("Internal service error")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Create gRPC client and call GetBPMNProcess
+	client := parserpb.NewParserServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := client.GetBPMNProcess(ctx, &parserpb.GetBPMNProcessRequest{
+		ProcessKey: processKey,
+	})
+	if err != nil {
+		logger.Error("Failed to get BPMN process from gRPC",
+			logger.String("process_key", processKey),
+			logger.String("error", err.Error()))
+
+		apiErr := models.InternalServerError("Failed to retrieve process information")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	if !resp.Success {
+		logger.Warn("BPMN process not found",
+			logger.String("process_key", processKey),
+			logger.String("message", resp.Message))
+
+		apiErr := models.ProcessNotFoundError(fmt.Sprintf("Process with key '%s' not found", processKey))
+		c.JSON(http.StatusNotFound, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Convert gRPC response to REST API format
+	processDetails := h.convertGRPCProcessDetailsToREST(resp.Process)
+
+	logger.Info("BPMN process retrieved successfully",
+		logger.String("request_id", requestID),
+		logger.String("process_key", processKey),
+		logger.String("process_name", processDetails.ProcessName))
+
+	c.JSON(http.StatusOK, models.SuccessResponse(processDetails, requestID))
 }
 
 // Helper methods
@@ -406,16 +510,48 @@ func (h *ParserHandler) sendParserRequest(req map[string]interface{}, requestID 
 	return response, nil
 }
 
-func (h *ParserHandler) parseProcessList(response map[string]interface{}) []BPMNProcess {
-	// Parse processes from response - implementation details
-	return []BPMNProcess{}
-}
+// convertGRPCProcessesToREST converts gRPC BPMNProcessSummary to REST API BPMNProcess format
+func (h *ParserHandler) convertGRPCProcessesToREST(grpcProcesses []*parserpb.BPMNProcessSummary) []BPMNProcess {
+	processes := make([]BPMNProcess, len(grpcProcesses))
 
-func (h *ParserHandler) extractTotalCount(response map[string]interface{}) int {
-	if count, ok := response["total_count"].(float64); ok {
-		return int(count)
+	for i, grpcProcess := range grpcProcesses {
+		// Parse created_at time
+		var createdAt int64
+		if parsedTime, err := time.Parse(time.RFC3339, grpcProcess.CreatedAt); err == nil {
+			createdAt = parsedTime.Unix()
+		}
+
+		// Parse updated_at time
+		var updatedAt int64
+		if parsedTime, err := time.Parse(time.RFC3339, grpcProcess.UpdatedAt); err == nil {
+			updatedAt = parsedTime.Unix()
+		}
+
+		// Convert version string to int32
+		var version int32 = 1
+		if v, err := strconv.Atoi(strings.TrimPrefix(grpcProcess.Version, "v")); err == nil {
+			version = int32(v)
+		}
+
+		processes[i] = BPMNProcess{
+			ID:           grpcProcess.ProcessId,
+			Key:          grpcProcess.ProcessKey,
+			Name:         grpcProcess.ProcessName,
+			Version:      version,
+			Description:  "", // Not available in gRPC summary
+			CreatedAt:    createdAt,
+			UpdatedAt:    updatedAt,
+			ElementCount: grpcProcess.TotalElements,
+			IsDeployable: grpcProcess.Status == "active",
+			Metadata: map[string]interface{}{
+				"status":         grpcProcess.Status,
+				"version_string": grpcProcess.Version,
+				"total_elements": grpcProcess.TotalElements,
+			},
+		}
 	}
-	return 0
+
+	return processes
 }
 
 func (h *ParserHandler) getRequestID(c *gin.Context) string {
@@ -693,6 +829,94 @@ func (h *ParserHandler) GetBPMNProcessJSON(c *gin.Context) {
 	c.JSON(http.StatusOK, models.SuccessResponse(jsonData, requestID))
 }
 
+// GetBPMNProcessXML handles GET /api/v1/bpmn/processes/:key/xml
+// @Summary Get BPMN process original XML
+// @Description Get original XML content of a BPMN process by process key
+// @Tags bpmn
+// @Produce text/xml
+// @Param key path string true "Process Key"
+// @Success 200 {string} string "Original BPMN XML content"
+// @Failure 400 {object} models.APIResponse{error=models.APIError}
+// @Failure 401 {object} models.APIResponse{error=models.APIError}
+// @Failure 403 {object} models.APIResponse{error=models.APIError}
+// @Failure 404 {object} models.APIResponse{error=models.APIError}
+// @Failure 500 {object} models.APIResponse{error=models.APIError}
+// @Security ApiKeyAuth
+// @Router /api/v1/bpmn/processes/{key}/xml [get]
+func (h *ParserHandler) GetBPMNProcessXML(c *gin.Context) {
+	requestID := h.getRequestID(c)
+	processKey := c.Param("key")
+
+	if processKey == "" {
+		apiErr := models.BadRequestError("Process key is required")
+		c.JSON(http.StatusBadRequest, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Debug("Getting BPMN process XML",
+		logger.String("request_id", requestID),
+		logger.String("process_key", processKey))
+
+	// Get gRPC client
+	client, conn, err := h.getParserGRPCClient()
+	if err != nil {
+		logger.Error("Failed to get Parser gRPC client",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
+		apiErr := models.InternalServerError("Parser service not available")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+	defer conn.Close()
+
+	// Create gRPC context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Call gRPC GetBPMNProcessXML method
+	grpcReq := &parserpb.GetBPMNProcessXMLRequest{
+		ProcessKey: processKey,
+	}
+
+	resp, err := client.GetBPMNProcessXML(ctx, grpcReq)
+	if err != nil {
+		logger.Error("Failed to get BPMN process XML via gRPC",
+			logger.String("request_id", requestID),
+			logger.String("process_key", processKey),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+		statusCode := models.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Check if operation succeeded
+	if !resp.Success {
+		message := "BPMN process XML not found"
+		if resp.Message != "" {
+			message = resp.Message
+		}
+		apiErr := models.NotFoundError(message)
+		c.JSON(http.StatusNotFound, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	logger.Info("BPMN process XML retrieved",
+		logger.String("request_id", requestID),
+		logger.String("process_key", processKey),
+		logger.Int("file_size", int(resp.FileSize)))
+
+	// Set appropriate headers for XML content
+	c.Header("Content-Type", "application/xml; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", resp.Filename))
+	c.Header("Content-Length", fmt.Sprintf("%d", resp.FileSize))
+
+	// Return raw XML content
+	c.String(http.StatusOK, resp.XmlData)
+}
+
 // Helper method to get Parser gRPC client
 func (h *ParserHandler) getParserGRPCClient() (parserpb.ParserServiceClient, *grpc.ClientConn, error) {
 	conn, err := h.coreInterface.GetGRPCConnection()
@@ -707,4 +931,27 @@ func (h *ParserHandler) getParserGRPCClient() (parserpb.ParserServiceClient, *gr
 
 	client := parserpb.NewParserServiceClient(grpcConn)
 	return client, grpcConn, nil
+}
+
+// convertGRPCProcessDetailsToREST converts gRPC BPMNProcessDetails to REST API BPMNProcessDetails format
+func (h *ParserHandler) convertGRPCProcessDetailsToREST(grpcDetails *parserpb.BPMNProcessDetails) *BPMNProcessDetails {
+	if grpcDetails == nil {
+		return nil
+	}
+
+	return &BPMNProcessDetails{
+		ProcessKey:     grpcDetails.ProcessKey,
+		ProcessID:      grpcDetails.ProcessId,
+		ProcessName:    grpcDetails.ProcessName,
+		Version:        grpcDetails.Version,
+		ProcessVersion: grpcDetails.ProcessVersion,
+		Status:         grpcDetails.Status,
+		TotalElements:  grpcDetails.TotalElements,
+		ElementCounts:  grpcDetails.ElementCounts,
+		ContentHash:    grpcDetails.ContentHash,
+		OriginalFile:   grpcDetails.OriginalFile,
+		CreatedAt:      grpcDetails.CreatedAt,
+		UpdatedAt:      grpcDetails.UpdatedAt,
+		ParsedAt:       grpcDetails.ParsedAt,
+	}
 }

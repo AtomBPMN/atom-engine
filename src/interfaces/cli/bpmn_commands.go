@@ -419,3 +419,59 @@ func (d *DaemonCommand) BPMNJson() error {
 
 	return nil
 }
+
+// BPMNXml shows original XML content of BPMN process via gRPC
+// Показывает оригинальное XML содержимое BPMN процесса через gRPC
+func (d *DaemonCommand) BPMNXml() error {
+	logger.Debug("Getting BPMN process XML")
+
+	if len(os.Args) < 4 {
+		logger.Error("Invalid BPMN xml arguments", logger.Int("args_count", len(os.Args)))
+		return fmt.Errorf("usage: atomd bpmn xml <process_key>")
+	}
+
+	processKey := os.Args[3]
+	logger.Debug("BPMN xml request", logger.String("process_key", processKey))
+
+	conn, err := d.grpcClient.Connect()
+	if err != nil {
+		logger.Error("Failed to connect to daemon for BPMN xml",
+			logger.String("error", err.Error()))
+		return fmt.Errorf("daemon is not running. Start daemon first with 'atomd start': %w", err)
+	}
+	defer conn.Close()
+
+	client := parserpb.NewParserServiceClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := client.GetBPMNProcessXML(ctx, &parserpb.GetBPMNProcessXMLRequest{
+		ProcessKey: processKey,
+	})
+	if err != nil {
+		logger.Error("Failed to get BPMN process XML", logger.String("error", err.Error()))
+		return fmt.Errorf("failed to get BPMN process XML: %w", err)
+	}
+
+	if !resp.Success {
+		fmt.Printf("Error: %s\n", resp.Message)
+		return nil
+	}
+
+	logger.Debug("BPMN process XML retrieved",
+		logger.String("process_key", processKey),
+		logger.Int("xml_length", len(resp.XmlData)),
+		logger.String("filename", resp.Filename),
+		logger.Int("file_size", int(resp.FileSize)))
+
+	fmt.Printf("BPMN Process XML\n")
+	fmt.Printf("================\n")
+	fmt.Printf("Process Key: %s\n", processKey)
+	fmt.Printf("Filename: %s\n", resp.Filename)
+	fmt.Printf("File Size: %d bytes\n", resp.FileSize)
+	fmt.Printf("\nXML Content:\n")
+	fmt.Printf("============\n")
+	fmt.Printf("%s\n", resp.XmlData)
+
+	return nil
+}

@@ -16,6 +16,7 @@ import (
 	"atom-engine/proto/incidents/incidentspb"
 	"atom-engine/proto/jobs/jobspb"
 	"atom-engine/proto/messages/messagespb"
+	"atom-engine/proto/parser/parserpb"
 	"atom-engine/proto/process/processpb"
 	"atom-engine/proto/timewheel/timewheelpb"
 	"atom-engine/src/core/interfaces"
@@ -121,6 +122,9 @@ func (s *processServiceServer) GetProcessInstanceStatus(ctx context.Context, req
 		Variables:       variables,
 		StartedAt:       result.StartedAt,
 		UpdatedAt:       result.UpdatedAt,
+		ProcessId:       result.ProcessID,
+		ProcessKey:      result.ProcessKey,
+		ProcessVersion:  1, // TODO: Get actual version from process instance
 	}, nil
 }
 
@@ -601,10 +605,33 @@ func (s *processServiceServer) GetProcessInstanceInfo(ctx context.Context, req *
 		}
 	}
 
-	// Get process key from tokens if available
+	// Get process key from status (formatted as "ProcessID:vVersion")
 	processKey := req.InstanceId
-	if len(tokensResp.Tokens) > 0 {
-		processKey = tokensResp.Tokens[0].ProcessKey
+	if statusResp.ProcessKey != "" {
+		processKey = statusResp.ProcessKey
+	} else if statusResp.ProcessId != "" && statusResp.ProcessVersion > 0 {
+		// Format: "ProcessID:vVersion"
+		processKey = fmt.Sprintf("%s:v%d", statusResp.ProcessId, statusResp.ProcessVersion)
+	}
+
+	// Find BPMN Process Key by process ID and version from status
+	bpmnProcessKey := ""
+	if statusResp.ProcessId != "" && statusResp.ProcessVersion > 0 {
+		processID := statusResp.ProcessId
+		version := fmt.Sprintf("v%d", statusResp.ProcessVersion)
+
+		// Get parser service to find BPMN process
+		parserService := &ParserService{core: s.core}
+		// Get all BPMN processes and find matching one
+		listResp, err := parserService.ListBPMNProcesses(ctx, &parserpb.ListBPMNProcessesRequest{})
+		if err == nil && listResp != nil && listResp.Success {
+			for _, process := range listResp.Processes {
+				if process.ProcessId == processID && process.Version == version {
+					bpmnProcessKey = process.ProcessKey
+					break
+				}
+			}
+		}
 	}
 
 	// Get external services information
@@ -737,6 +764,7 @@ func (s *processServiceServer) GetProcessInstanceInfo(ctx context.Context, req *
 		Message:          "process instance information retrieved successfully",
 		InstanceId:       statusResp.InstanceId,
 		ProcessKey:       processKey,
+		BpmnProcessKey:   bpmnProcessKey,
 		Status:           statusResp.Status,
 		CurrentActivity:  statusResp.CurrentActivity,
 		StartedAt:        statusResp.StartedAt,

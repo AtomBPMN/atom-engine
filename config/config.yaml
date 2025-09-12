@@ -7,7 +7,7 @@ instance_name: "atom-engine-dev"
 
 # Base path for all relative paths in configuration
 # Базовый путь для всех относительных путей в конфигурации
-base_path: "/home/user/cursor_ai/AtomBPMNProject/atom-engine/build"
+base_path: "/home/user/Projects/atombpmn/atom-engine/build"
 
 # Database configuration (relative to base_path)
 # Конфигурация базы данных (относительно base_path)

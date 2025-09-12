@@ -19,10 +19,25 @@ import (
 	"atom-engine/proto/timewheel/timewheelpb"
 	"atom-engine/src/core/grpc"
 	"atom-engine/src/core/logger"
+	coremodels "atom-engine/src/core/models"
 	"atom-engine/src/core/restapi/middleware"
 	"atom-engine/src/core/restapi/models"
 	"atom-engine/src/core/restapi/utils"
 )
+
+// TimerRequest represents timewheel timer request for JSON messaging
+type TimerRequest struct {
+	ElementID         string                          `json:"element_id"`
+	TokenID           string                          `json:"token_id"`
+	ProcessInstanceID string                          `json:"process_instance_id"`
+	TimerType         coremodels.TimerType            `json:"timer_type"`
+	ProcessContext    *coremodels.TimerProcessContext `json:"process_context"`
+	TimeDate          *string                         `json:"time_date,omitempty"`
+	TimeDuration      *string                         `json:"time_duration,omitempty"`
+	TimeCycle         *string                         `json:"time_cycle,omitempty"`
+	AttachedToRef     *string                         `json:"attached_to_ref,omitempty"`
+	CancelActivity    *bool                           `json:"cancel_activity,omitempty"`
+}
 
 // TimerHandler handles timer management HTTP requests
 type TimerHandler struct {
@@ -188,13 +203,27 @@ func (h *TimerHandler) CreateTimer(c *gin.Context) {
 	}
 
 	// Create timer request message
-	timerReq := map[string]interface{}{
-		"operation":     "add",
-		"timer_id":      req.TimerID,
-		"duration":      req.Duration,
-		"callback_data": req.CallbackData,
-		"repeating":     req.Repeating,
-		"interval":      req.Interval,
+	timerRequest := TimerRequest{
+		ElementID:         req.TimerID,                   // Use TimerID as ElementID for user timers
+		TokenID:           "rest-token-" + req.TimerID,   // Generate token ID for user timers
+		ProcessInstanceID: "rest-process-" + req.TimerID, // Generate process instance ID for user timers
+		TimerType:         coremodels.TimerTypeEvent,     // Use EVENT for user timers
+		ProcessContext:    nil,                           // No process context for user timers
+	}
+
+	// Handle repeating vs one-time timers
+	if req.Repeating && req.Interval != "" {
+		timerRequest.TimeCycle = &req.Interval
+	} else {
+		timerRequest.TimeDuration = &req.Duration
+	}
+
+	timerReq := struct {
+		Type    string       `json:"type"`
+		Request TimerRequest `json:"request"`
+	}{
+		Type:    "schedule_timer",
+		Request: timerRequest,
 	}
 
 	reqJSON, err := json.Marshal(timerReq)
@@ -207,6 +236,10 @@ func (h *TimerHandler) CreateTimer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
 		return
 	}
+
+	logger.Debug("Sending timer request to timewheel",
+		logger.String("request_id", requestID),
+		logger.String("json_message", string(reqJSON)))
 
 	// Send timer creation request
 	err = timewheelComp.ProcessMessage(context.Background(), string(reqJSON))
@@ -230,65 +263,18 @@ func (h *TimerHandler) CreateTimer(c *gin.Context) {
 		return
 	}
 
-	// Wait for response from timewheel
-	select {
-	case respJSON := <-timewheelComp.GetResponseChannel():
-		var response map[string]interface{}
-		err = json.Unmarshal([]byte(respJSON), &response)
-		if err != nil {
-			logger.Error("Failed to parse timer response",
-				logger.String("request_id", requestID),
-				logger.String("error", err.Error()))
-
-			apiErr := models.InternalServerError("Invalid timer service response")
-			c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
-			return
-		}
-
-		// Check if timer creation was successful
-		success, _ := response["success"].(bool)
-		if !success {
-			errorMsg, _ := response["error"].(string)
-			if errorMsg == "" {
-				errorMsg = "Timer creation failed"
-			}
-
-			logger.Warn("Timer creation failed",
-				logger.String("request_id", requestID),
-				logger.String("timer_id", req.TimerID),
-				logger.String("error", errorMsg))
-
-			apiErr := models.NewAPIError(models.ErrorCodeTimerFailed, errorMsg)
-			statusCode := models.HTTPStatusFromErrorCode(apiErr.Code)
-			c.JSON(statusCode, models.ErrorResponse(apiErr, requestID))
-			return
-		}
-
-		// Extract timer information from response
-		scheduledAt, _ := response["scheduled_at"].(float64)
-
-		timerResp := &TimerCreateResponse{
-			TimerID:     req.TimerID,
-			ScheduledAt: int64(scheduledAt),
-			Status:      "scheduled",
-		}
-
-		logger.Info("Timer created successfully",
-			logger.String("request_id", requestID),
-			logger.String("timer_id", req.TimerID),
-			logger.Int64("scheduled_at", int64(scheduledAt)))
-
-		c.JSON(http.StatusCreated, models.SuccessResponse(timerResp, requestID))
-
-	case <-context.Background().Done():
-		// Timeout handling
-		logger.Error("Timer creation timeout",
-			logger.String("request_id", requestID),
-			logger.String("timer_id", req.TimerID))
-
-		apiErr := models.InternalServerError("Timer service timeout")
-		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+	// Timer creation successful (no error returned)
+	timerResp := &TimerCreateResponse{
+		TimerID:     req.TimerID,
+		ScheduledAt: 0, // We don't have exact scheduled time from ProcessMessage
+		Status:      "scheduled",
 	}
+
+	logger.Info("Timer created successfully",
+		logger.String("request_id", requestID),
+		logger.String("timer_id", req.TimerID))
+
+	c.JSON(http.StatusCreated, models.SuccessResponse(timerResp, requestID))
 }
 
 // ListTimers handles GET /api/v1/timers
@@ -456,10 +442,66 @@ func (h *TimerHandler) DeleteTimer(c *gin.Context) {
 		logger.String("request_id", requestID),
 		logger.String("timer_id", timerID))
 
-	// Timer deletion is available through CLI: atomd timer remove <timer_id>
-	c.JSON(http.StatusNotImplemented, models.ErrorResponse(
-		models.NewAPIError("NOT_IMPLEMENTED", "Use CLI: atomd timer remove <timer_id>"),
-		requestID))
+	// Get timewheel component
+	timewheelComp := h.coreInterface.GetTimewheelComponent()
+	if timewheelComp == nil {
+		logger.Error("Timewheel component not available",
+			logger.String("request_id", requestID))
+
+		apiErr := models.InternalServerError("Timer service not available")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Create timer removal request message
+	timerReq := map[string]interface{}{
+		"type":     "cancel_timer",
+		"timer_id": timerID,
+	}
+
+	reqJSON, err := json.Marshal(timerReq)
+	if err != nil {
+		logger.Error("Failed to marshal timer removal request",
+			logger.String("request_id", requestID),
+			logger.String("error", err.Error()))
+
+		apiErr := models.InternalServerError("Failed to process timer removal request")
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Send timer removal request
+	err = timewheelComp.ProcessMessage(context.Background(), string(reqJSON))
+	if err != nil {
+		logger.Error("Failed to send timer removal request",
+			logger.String("request_id", requestID),
+			logger.String("timer_id", timerID),
+			logger.String("error", err.Error()))
+
+		apiErr := h.converter.GRPCErrorToAPIError(err)
+
+		// Check for specific timer errors
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "does not exist") {
+			apiErr = models.TimerNotFoundError(timerID)
+		}
+
+		statusCode := models.HTTPStatusFromErrorCode(apiErr.Code)
+		c.JSON(statusCode, models.ErrorResponse(apiErr, requestID))
+		return
+	}
+
+	// Timer removal successful (no error returned)
+	logger.Info("Timer removed successfully",
+		logger.String("request_id", requestID),
+		logger.String("timer_id", timerID))
+
+	// Return success response with minimal data
+	deleteResp := map[string]interface{}{
+		"timer_id": timerID,
+		"message":  "Timer removed successfully",
+	}
+
+	c.JSON(http.StatusOK, models.SuccessResponse(deleteResp, requestID))
 }
 
 // GetStats handles GET /api/v1/timers/stats

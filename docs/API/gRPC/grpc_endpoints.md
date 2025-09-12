@@ -12,6 +12,7 @@
 - `DeleteBPMNProcess` - Удалить BPMN процесс
 - `GetBPMNStats` - Получить статистику парсинга BPMN
 - `GetBPMNProcessJSON` - Получить JSON данные BPMN процесса
+- `GetBPMNProcessXML` - Получить оригинальный BPMN XML процесса
 
 ## Process Service
 
@@ -93,7 +94,7 @@
 
 ---
 
-**Всего gRPC методов**: 55
+**Всего gRPC методов**: 56
 
 **Поддерживаемые форматы**:
 - ISO 8601 duration (PT30S, PT1H, P1D)

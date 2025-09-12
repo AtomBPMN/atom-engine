@@ -156,6 +156,50 @@ func (p *BPMNParser) extractProcessNameFromXML(root *XMLElement) string {
 	return p.findElementAttribute(root, "process", "name")
 }
 
+// extractProcessVersionFromXML extracts process version from XML root
+// Извлекает версию процесса из корня XML
+func (p *BPMNParser) extractProcessVersionFromXML(root *XMLElement) int {
+	// Priority 1: Look for <zeebe:versionTag> in process extensionElements
+	// Приоритет 1: Поиск <zeebe:versionTag> в extensionElements процесса
+	if versionTag := p.findZeebeVersionTag(root); versionTag != "" {
+		if version := p.parseVersionString(versionTag); version > 0 {
+			return version
+		}
+	}
+
+	// Priority 2: Look for version attribute in bpmn:process element
+	// Приоритет 2: Поиск атрибута version в элементе bpmn:process
+	if processVersion := p.findElementAttribute(root, "process", "version"); processVersion != "" {
+		if version := p.parseVersionString(processVersion); version > 0 {
+			return version
+		}
+	}
+
+	// Priority 3: Look for version attribute in bpmn:definitions element
+	// Приоритет 3: Поиск атрибута version в элементе bpmn:definitions
+	if root.XMLName.Local == "definitions" {
+		for _, attr := range root.Attributes {
+			if attr.Name.Local == "version" {
+				if version := p.parseVersionString(attr.Value); version > 0 {
+					return version
+				}
+			}
+		}
+	}
+
+	// Priority 4: Look in definitions child if current element is not definitions
+	// Приоритет 4: Поиск в дочернем definitions если текущий элемент не definitions
+	if definitionsVersion := p.findElementAttribute(root, "definitions", "version"); definitionsVersion != "" {
+		if version := p.parseVersionString(definitionsVersion); version > 0 {
+			return version
+		}
+	}
+
+	// Default fallback to version 1
+	// Значение по умолчанию - версия 1
+	return 1
+}
+
 // extractNamespaces extracts all namespace declarations
 // Извлекает все объявления пространств имен
 func (p *BPMNParser) extractNamespaces(root *XMLElement) map[string]string {
@@ -202,4 +246,97 @@ func (p *BPMNParser) ToJSON() ([]byte, error) {
 // Возвращает данные спарсенного процесса
 func (p *BPMNParser) GetProcessData() *models.BPMNProcess {
 	return p.processData
+}
+
+// findZeebeVersionTag finds zeebe:versionTag in process extensionElements
+// Находит zeebe:versionTag в extensionElements процесса
+func (p *BPMNParser) findZeebeVersionTag(element *XMLElement) string {
+	// Look for process element
+	// Поиск элемента process
+	if processElement := p.findProcessElement(element); processElement != nil {
+		// Look for extensionElements in process
+		// Поиск extensionElements в процессе
+		for _, child := range processElement.Children {
+			if child.XMLName.Local == "extensionElements" {
+				// Look for versionTag in extensionElements
+				// Поиск versionTag в extensionElements
+				return p.findVersionTagInExtensions(child)
+			}
+		}
+	}
+	return ""
+}
+
+// findProcessElement recursively finds the process element
+// Рекурсивно находит элемент process
+func (p *BPMNParser) findProcessElement(element *XMLElement) *XMLElement {
+	if element.XMLName.Local == "process" {
+		return element
+	}
+
+	for _, child := range element.Children {
+		if result := p.findProcessElement(child); result != nil {
+			return result
+		}
+	}
+
+	return nil
+}
+
+// findVersionTagInExtensions finds versionTag in extensionElements
+// Находит versionTag в extensionElements
+func (p *BPMNParser) findVersionTagInExtensions(extensionElements *XMLElement) string {
+	for _, child := range extensionElements.Children {
+		if child.XMLName.Local == "versionTag" {
+			// Look for value attribute
+			// Поиск атрибута value
+			for _, attr := range child.Attributes {
+				if attr.Name.Local == "value" {
+					return attr.Value
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// parseVersionString parses version string into integer
+// Парсит строку версии в целое число
+func (p *BPMNParser) parseVersionString(versionStr string) int {
+	if versionStr == "" {
+		return 0
+	}
+
+	// Remove common prefixes like "v", "V", "version"
+	// Удаление общих префиксов как "v", "V", "version"
+	cleanVersion := versionStr
+	if len(cleanVersion) > 1 {
+		if cleanVersion[0] == 'v' || cleanVersion[0] == 'V' {
+			cleanVersion = cleanVersion[1:]
+		}
+	}
+
+	// Handle version formats like "1.0", "1.2.3" - take first number
+	// Обработка форматов версий как "1.0", "1.2.3" - берем первое число
+	var result int
+	for i, char := range cleanVersion {
+		if char >= '0' && char <= '9' {
+			result = result*10 + int(char-'0')
+		} else if char == '.' && result > 0 {
+			// Stop at first dot if we already have a number
+			// Останавливаемся на первой точке если уже есть число
+			break
+		} else if result > 0 {
+			// Stop at first non-digit if we already have a number
+			// Останавливаемся на первом не-цифре если уже есть число
+			break
+		}
+		// Continue if haven't found any digits yet
+		// Продолжаем если еще не нашли цифры
+		if i == 0 && (char < '0' || char > '9') {
+			continue
+		}
+	}
+
+	return result
 }

@@ -323,6 +323,8 @@ func (c *CLI) handleBPMNCommand() error {
 		return c.daemon.BPMNStats()
 	case "json":
 		return c.daemon.BPMNJson()
+	case "xml":
+		return c.daemon.BPMNXml()
 	case "help", "--help", "-h":
 		showBPMNHelp()
 		return nil

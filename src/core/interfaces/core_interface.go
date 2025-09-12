@@ -89,6 +89,10 @@ type CoreTypedInterface interface {
 	StartProcessTyped(req *types.ProcessStartRequest) (*types.ProcessStartResponse, error)
 	CancelProcessTyped(req *types.ProcessCancelRequest) (*types.ProcessCancelResponse, error)
 
+	// REST API adapter methods
+	// Методы адаптера для REST API
+	GetProcessInfoForREST(instanceID string) (map[string]interface{}, error)
+
 	// Strongly typed operations results
 	// Строго типизированные результаты операций
 	ExecuteOperation(operationName string, params types.Variables) (*types.OperationResult, error)

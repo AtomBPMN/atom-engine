@@ -38,6 +38,10 @@ service ParserService {
   // Get BPMN process JSON data
   // Получить JSON данные BPMN процесса
   rpc GetBPMNProcessJSON(GetBPMNProcessJSONRequest) returns (GetBPMNProcessJSONResponse);
+  
+  // Get BPMN process original XML content
+  // Получить оригинальное XML содержимое BPMN процесса
+  rpc GetBPMNProcessXML(GetBPMNProcessXMLRequest) returns (GetBPMNProcessXMLResponse);
 }
 
 // Parse BPMN file request
@@ -184,4 +188,20 @@ message GetBPMNProcessJSONResponse {
   bool success = 1;
   string message = 2;
   string json_data = 3;
+}
+
+// Get BPMN process XML request
+// Запрос XML данных BPMN процесса
+message GetBPMNProcessXMLRequest {
+  string process_key = 1;
+}
+
+// Get BPMN process XML response
+// Ответ XML данных BPMN процесса
+message GetBPMNProcessXMLResponse {
+  bool success = 1;
+  string message = 2;
+  string xml_data = 3;
+  string filename = 4;
+  int32 file_size = 5;
 }

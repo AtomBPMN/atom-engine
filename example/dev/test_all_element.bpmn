@@ -131,21 +131,21 @@
       <bpmn:incoming>Flow_3_L1_way_2</bpmn:incoming>
       <bpmn:outgoing>Flow_1fdx4ng</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerEventDefinition_15e20oq">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT10s</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3m</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:intermediateCatchEvent id="First_SEND_Event_timer_2_L2_way_2" name="First SEND Event timer 2 L2 way 2">
       <bpmn:incoming>Flow_3_L2_way_2</bpmn:incoming>
       <bpmn:outgoing>First_SEND_Flow_4_L2_way_2</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerEventDefinition_0g5n6nd">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT15s</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3m</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:intermediateCatchEvent id="WAIT_Event_timer_2_L3_way_2" name="WAIT_Event timer 2 L3 way 2">
       <bpmn:incoming>Flow_3_L3_way_2</bpmn:incoming>
       <bpmn:outgoing>WAIT_Flow_4_L3_way_2</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerEventDefinition_0wvixd2">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT20s</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3m</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:endEvent id="END_Event_Service_Task_L1_way_2" name="END_Event Service Task L1 way 2">
@@ -172,7 +172,7 @@
       <bpmn:incoming>Flow_3_L4_way_2</bpmn:incoming>
       <bpmn:outgoing>First_WAIT_Flow_4_L4_way_2</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerEventDefinition_1wxdxs5">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT30s</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3m</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:endEvent id="END_First_Receive_Even_Send_Task_L5_way_2" name="END_First Receive Event Receive Task L5 way 2">
@@ -186,7 +186,7 @@
       <bpmn:incoming>Flow_3_L5_way_2</bpmn:incoming>
       <bpmn:outgoing>First_Receive_Flow_4_L5_way_2</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerEventDefinition_1i2t7hs">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT25s</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3m</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:boundaryEvent id="Timer_NON_Interruping_Boundary_Way_1" name="Timer NON Interruping Boundary Way 1" cancelActivity="false" attachedToRef="Service_Task_1_Way_1">
@@ -258,7 +258,7 @@
       <bpmn:incoming>Flow_0gu46rm</bpmn:incoming>
       <bpmn:outgoing>Flow_1ue5sub</bpmn:outgoing>
       <bpmn:timerEventDefinition id="TimerEventDefinition_0urnlrz">
-        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT25s</bpmn:timeDuration>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">PT3m</bpmn:timeDuration>
       </bpmn:timerEventDefinition>
     </bpmn:intermediateCatchEvent>
     <bpmn:endEvent id="END_First_Receive_Even_Send_Task_L6_way_2" name="END_First Receive Event Receive Task L6 way 2">

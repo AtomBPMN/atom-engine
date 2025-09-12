@@ -445,6 +445,9 @@ func (d *DaemonCommand) ProcessInfo() error {
 	fmt.Printf("BASIC INFORMATION:\n")
 	fmt.Printf("  Instance ID:      %s\n", response.InstanceId)
 	fmt.Printf("  Process Key:      %s\n", response.ProcessKey)
+	if response.BpmnProcessKey != "" {
+		fmt.Printf("  BPMN Process Key: %s\n", response.BpmnProcessKey)
+	}
 	fmt.Printf("  Status:           %s\n", colorizeStatus(response.Status))
 	fmt.Printf("  Current Activity: %s\n", response.CurrentActivity)
 	fmt.Printf("  Started At:       %s\n", time.Unix(response.StartedAt, 0).Format("2006-01-02 15:04:05"))
