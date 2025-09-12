@@ -213,15 +213,18 @@ func (p *BPMNParser) ParseBPMNContent(bpmnContent, processID string, force bool)
 	}
 
 	processName := p.extractProcessNameFromXML(xmlRoot)
+	processVersion := p.extractProcessVersionFromXML(xmlRoot)
 	bpmnProcess := models.NewBPMNProcess(processID, processName)
 	bpmnProcess.BPMNID = models.GenerateBPMNID()
 	bpmnProcess.OriginalFile = "uploaded_content.bpmn" // No file path for content
 	bpmnProcess.ContentHash = models.GenerateContentHash(content)
+	bpmnProcess.ProcessVersion = processVersion
 
 	logger.Info("Created BPMN process model",
 		logger.String("bpmn_id", bpmnProcess.BPMNID),
 		logger.String("process_id", processID),
-		logger.String("process_name", processName))
+		logger.String("process_name", processName),
+		logger.Int("process_version", processVersion))
 
 	// Create parse context
 	context := &ParseContext{
@@ -300,15 +303,18 @@ func (p *BPMNParser) ParseBPMNFile(filePath, processID string, force bool) (*mod
 	}
 
 	processName := p.extractProcessNameFromXML(xmlRoot)
+	processVersion := p.extractProcessVersionFromXML(xmlRoot)
 	bpmnProcess := models.NewBPMNProcess(processID, processName)
 	bpmnProcess.BPMNID = models.GenerateBPMNID()
 	bpmnProcess.OriginalFile = filepath.Base(filePath)
 	bpmnProcess.ContentHash = models.GenerateContentHash(content)
+	bpmnProcess.ProcessVersion = processVersion
 
 	logger.Info("Created BPMN process model",
 		logger.String("bpmn_id", bpmnProcess.BPMNID),
 		logger.String("process_id", processID),
-		logger.String("process_name", processName))
+		logger.String("process_name", processName),
+		logger.Int("extracted_process_version", processVersion))
 
 	// Create parse context
 	// Создание контекста парсинга

@@ -106,15 +106,32 @@ func (c *Component) ParseBPMNContent(bpmnContent, processID string, force bool) 
 	bpmnProcess.ParsedAt = time.Now()
 	bpmnProcess.Status = "active"
 
-	// Determine correct version number
-	maxVersion, err := c.storage.GetMaxProcessVersionByProcessID(bpmnProcess.ProcessID)
-	if err != nil {
-		logger.Warn("Failed to get max version for process",
+	// Determine correct version number - prefer XML version if available
+	// Определяем правильный номер версии - предпочитаем версию из XML если доступна
+	extractedVersion := bpmnProcess.ProcessVersion
+	if extractedVersion > 1 {
+		// Use version from XML if it was extracted
+		// Используем версию из XML если она была извлечена
+		logger.Info("Using process version from XML",
 			logger.String("process_id", bpmnProcess.ProcessID),
-			logger.String("error", err.Error()))
-		bpmnProcess.ProcessVersion = 1 // Fallback to version 1
+			logger.Int("xml_version", extractedVersion))
 	} else {
-		bpmnProcess.ProcessVersion = maxVersion + 1 // Increment version
+		// Fall back to auto-increment version if no version in XML
+		// Откат к автоинкременту версии если нет версии в XML
+		maxVersion, err := c.storage.GetMaxProcessVersionByProcessID(bpmnProcess.ProcessID)
+		if err != nil {
+			logger.Warn("Failed to get max version for process",
+				logger.String("process_id", bpmnProcess.ProcessID),
+				logger.String("error", err.Error()))
+			bpmnProcess.ProcessVersion = 1 // Fallback to version 1
+		} else {
+			bpmnProcess.ProcessVersion = maxVersion + 1 // Increment version
+		}
+
+		logger.Info("Using auto-incremented process version",
+			logger.String("process_id", bpmnProcess.ProcessID),
+			logger.Int("version", bpmnProcess.ProcessVersion),
+			logger.Int("previous_max_version", maxVersion))
 	}
 
 	// Convert to JSON for storage
@@ -146,12 +163,14 @@ func (c *Component) ParseBPMNContent(bpmnContent, processID string, force bool) 
 	}
 
 	result := &ParseResult{
-		BPMNID:        bpmnProcess.BPMNID,
-		ProcessID:     bpmnProcess.ProcessID,
-		TotalElements: totalElements,
-		ElementCounts: bpmnProcess.ElementCounts,
-		Success:       true,
-		ParsedAt:      bpmnProcess.ParsedAt,
+		BPMNID:         bpmnProcess.BPMNID,
+		ProcessID:      bpmnProcess.ProcessID,
+		ProcessName:    bpmnProcess.ProcessName,
+		ProcessVersion: bpmnProcess.ProcessVersion,
+		TotalElements:  totalElements,
+		ElementCounts:  bpmnProcess.ElementCounts,
+		Success:        true,
+		ParsedAt:       bpmnProcess.ParsedAt,
 	}
 
 	logger.Info("BPMN content parsed successfully",
@@ -199,22 +218,33 @@ func (c *Component) ParseBPMNFile(filePath, processID string, force bool) (*Pars
 	bpmnProcess.ParsedAt = time.Now()
 	bpmnProcess.Status = "active"
 
-	// Determine correct version number based on existing processes
-	// Определяем правильный номер версии на основе существующих процессов
-	maxVersion, err := c.storage.GetMaxProcessVersionByProcessID(bpmnProcess.ProcessID)
-	if err != nil {
-		logger.Warn("Failed to get max version for process",
+	// Determine correct version number - prefer XML version if available
+	// Определяем правильный номер версии - предпочитаем версию из XML если доступна
+	extractedVersion := bpmnProcess.ProcessVersion
+	if extractedVersion > 1 {
+		// Use version from XML if it was extracted
+		// Используем версию из XML если она была извлечена
+		logger.Info("Using process version from XML",
 			logger.String("process_id", bpmnProcess.ProcessID),
-			logger.String("error", err.Error()))
-		bpmnProcess.ProcessVersion = 1 // Fallback to version 1
+			logger.Int("xml_version", extractedVersion))
 	} else {
-		bpmnProcess.ProcessVersion = maxVersion + 1 // Increment version
-	}
+		// Fall back to auto-increment version if no version in XML
+		// Откат к автоинкременту версии если нет версии в XML
+		maxVersion, err := c.storage.GetMaxProcessVersionByProcessID(bpmnProcess.ProcessID)
+		if err != nil {
+			logger.Warn("Failed to get max version for process",
+				logger.String("process_id", bpmnProcess.ProcessID),
+				logger.String("error", err.Error()))
+			bpmnProcess.ProcessVersion = 1 // Fallback to version 1
+		} else {
+			bpmnProcess.ProcessVersion = maxVersion + 1 // Increment version
+		}
 
-	logger.Info("Set process version",
-		logger.String("process_id", bpmnProcess.ProcessID),
-		logger.Int("version", bpmnProcess.ProcessVersion),
-		logger.Int("previous_max_version", maxVersion))
+		logger.Info("Using auto-incremented process version",
+			logger.String("process_id", bpmnProcess.ProcessID),
+			logger.Int("version", bpmnProcess.ProcessVersion),
+			logger.Int("previous_max_version", maxVersion))
+	}
 
 	// Convert to JSON for storage
 	// Конвертация в JSON для хранения
@@ -263,13 +293,14 @@ func (c *Component) ParseBPMNFile(filePath, processID string, force bool) (*Pars
 		logger.Int("total_elements", bpmnProcess.GetTotalElements()))
 
 	return &ParseResult{
-		BPMNID:        bpmnProcess.BPMNID,
-		ProcessID:     bpmnProcess.ProcessID,
-		ProcessName:   bpmnProcess.ProcessName,
-		TotalElements: bpmnProcess.GetTotalElements(),
-		ElementCounts: bpmnProcess.ElementCounts,
-		ParsedAt:      bpmnProcess.ParsedAt,
-		Success:       true,
+		BPMNID:         bpmnProcess.BPMNID,
+		ProcessID:      bpmnProcess.ProcessID,
+		ProcessName:    bpmnProcess.ProcessName,
+		ProcessVersion: bpmnProcess.ProcessVersion,
+		TotalElements:  bpmnProcess.GetTotalElements(),
+		ElementCounts:  bpmnProcess.ElementCounts,
+		ParsedAt:       bpmnProcess.ParsedAt,
+		Success:        true,
 	}, nil
 }
 
@@ -531,13 +562,14 @@ func (c *Component) saveJSONFile(bpmnProcess *models.BPMNProcess, jsonData []byt
 // ParseResult represents result of BPMN parsing operation
 // Результат операции парсинга BPMN
 type ParseResult struct {
-	BPMNID        string         `json:"bpmn_id"`
-	ProcessID     string         `json:"process_id"`
-	ProcessName   string         `json:"process_name"`
-	TotalElements int            `json:"total_elements"`
-	ElementCounts map[string]int `json:"element_counts"`
-	ParsedAt      time.Time      `json:"parsed_at"`
-	Success       bool           `json:"success"`
+	BPMNID         string         `json:"bpmn_id"`
+	ProcessID      string         `json:"process_id"`
+	ProcessName    string         `json:"process_name"`
+	ProcessVersion int            `json:"process_version"`
+	TotalElements  int            `json:"total_elements"`
+	ElementCounts  map[string]int `json:"element_counts"`
+	ParsedAt       time.Time      `json:"parsed_at"`
+	Success        bool           `json:"success"`
 }
 
 // ProcessInfo represents brief information about BPMN process
@@ -619,7 +651,7 @@ func (c *Component) handleParseBPMNFile(ctx context.Context, request ParserReque
 			ProcessKey:     result.BPMNID,
 			ProcessID:      result.ProcessID,
 			ProcessName:    result.ProcessName,
-			ProcessVersion: 1, // Actual version extraction not implemented
+			ProcessVersion: result.ProcessVersion, // Extracted from BPMN XML
 			ElementsCount:  result.TotalElements,
 			Success:        result.Success,
 			Message:        "BPMN file parsed successfully",
@@ -650,7 +682,7 @@ func (c *Component) handleParseBPMNContent(ctx context.Context, request ParserRe
 		parseResult := JSONParseResult{
 			ProcessKey:     result.BPMNID,
 			ProcessID:      result.ProcessID,
-			ProcessVersion: 1, // Actual version extraction not implemented
+			ProcessVersion: result.ProcessVersion, // Extracted from BPMN XML
 			ElementsCount:  result.TotalElements,
 			Success:        result.Success,
 			Message:        "BPMN content parsed successfully",
