@@ -9,30 +9,14 @@ This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
 package server
 
 import (
-	"context"
 	"fmt"
 
-	"atom-engine/src/core/models"
 	"atom-engine/src/core/restapi/handlers"
+	"atom-engine/src/jobs"
 )
 
 // REST API adapter methods
 // Методы-адаптеры для REST API
-
-// GetProcessComponentForREST returns process component adapted for REST API
-func (c *Core) GetProcessComponentForREST() handlers.ProcessComponentInterface {
-	grpcComp := c.GetProcessComponent()
-	if grpcComp == nil {
-		return nil
-	}
-	return &processComponentRESTAdapter{grpcComp: grpcComp}
-}
-
-// GetTimewheelComponentForREST returns timewheel component adapted for REST API
-func (c *Core) GetTimewheelComponentForREST() handlers.TimewheelComponentInterface {
-	grpcComp := c.GetTimewheelComponent()
-	return &timewheelComponentRESTAdapter{grpcComp: grpcComp}
-}
 
 // GetTimewheelStatsForREST returns timewheel stats adapted for REST API
 func (c *Core) GetTimewheelStatsForREST() (*handlers.TimewheelStatsResponse, error) {
@@ -142,86 +126,26 @@ func (c *Core) buildExternalServicesForREST(instanceID, processKey string) map[s
 		externalServices["timers"] = timers
 	}
 
-	// TODO: Add jobs, messages, incidents through similar patterns
+	// Get jobs using jobs component - cast to jobs.Component
+	if jobsComp, ok := c.GetJobsComponent().(*jobs.Component); jobsComp != nil && ok {
+		if jobInfos, _, err := jobsComp.ListJobs("", "", instanceID, "", 1000, 0); err == nil {
+			var jobsList []map[string]interface{}
+			for _, jobInfo := range jobInfos {
+				jobMap := map[string]interface{}{
+					"key":           jobInfo.Key,
+					"type":          jobInfo.Type,
+					"worker":        jobInfo.Worker,
+					"element_id":    "", // Not available in JobInfo
+					"status":        jobInfo.Status,
+					"retries":       jobInfo.Retries,
+					"created_at":    jobInfo.CreatedAt,
+					"error_message": jobInfo.ErrorMessage,
+				}
+				jobsList = append(jobsList, jobMap)
+			}
+			externalServices["jobs"] = jobsList
+		}
+	}
 
 	return externalServices
-}
-
-// Adapter for process component
-type processComponentRESTAdapter struct {
-	grpcComp interface{} // grpc.ProcessComponentInterface
-}
-
-func (a *processComponentRESTAdapter) StartProcessInstance(processKey string, variables map[string]interface{}) (*handlers.ProcessInstanceResult, error) {
-	// This would need to call the actual gRPC component method and convert the result
-	// For now, return a mock result
-	return &handlers.ProcessInstanceResult{
-		InstanceID:      "mock-instance-id",
-		ProcessID:       processKey,
-		ProcessName:     "Mock Process",
-		State:           "ACTIVE",
-		CurrentActivity: "start",
-		StartedAt:       0,
-		UpdatedAt:       0,
-		Variables:       variables,
-	}, nil
-}
-
-func (a *processComponentRESTAdapter) GetProcessInstanceStatus(instanceID string) (*handlers.ProcessInstanceResult, error) {
-	// Mock implementation
-	return &handlers.ProcessInstanceResult{
-		InstanceID:      instanceID,
-		ProcessID:       "mock-process",
-		ProcessName:     "Mock Process",
-		State:           "ACTIVE",
-		CurrentActivity: "running",
-		StartedAt:       0,
-		UpdatedAt:       0,
-		Variables:       make(map[string]interface{}),
-	}, nil
-}
-
-func (a *processComponentRESTAdapter) CancelProcessInstance(instanceID string, reason string) error {
-	// Mock implementation
-	return nil
-}
-
-func (a *processComponentRESTAdapter) ListProcessInstances(statusFilter string, processKeyFilter string, limit int) ([]*handlers.ProcessInstanceResult, error) {
-	// Mock implementation
-	return []*handlers.ProcessInstanceResult{}, nil
-}
-
-func (a *processComponentRESTAdapter) GetActiveTokens(instanceID string) ([]*models.Token, error) {
-	// Mock implementation
-	return []*models.Token{}, nil
-}
-
-func (a *processComponentRESTAdapter) GetTokensByProcessInstance(instanceID string) ([]*models.Token, error) {
-	// Mock implementation - for trace endpoint
-	return []*models.Token{}, nil
-}
-
-// Adapter for timewheel component
-type timewheelComponentRESTAdapter struct {
-	grpcComp interface{} // grpc.TimewheelComponentInterface
-}
-
-func (a *timewheelComponentRESTAdapter) ProcessMessage(ctx context.Context, messageJSON string) error {
-	// This would need to call the actual gRPC timewheel component
-	// For now, return success
-	return nil
-}
-
-func (a *timewheelComponentRESTAdapter) GetResponseChannel() <-chan string {
-	// This would need to return the actual gRPC component response channel
-	// For now, return a mock channel
-	ch := make(chan string, 1)
-	ch <- `{"success": true}`
-	return ch
-}
-
-func (a *timewheelComponentRESTAdapter) GetTimerInfo(timerID string) (level int, remainingSeconds int64, found bool) {
-	// This would need to call the actual gRPC component
-	// For now, return mock data
-	return 0, 0, false
 }
