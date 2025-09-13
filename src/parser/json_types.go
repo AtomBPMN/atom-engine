@@ -120,12 +120,9 @@ type ProcessListResult struct {
 // ParserStatsResult result structure for parser statistics
 // Структура результата для статистики парсера
 type ParserStatsResult struct {
-	TotalProcesses       int   `json:"total_processes"`
-	ActiveProcesses      int   `json:"active_processes"`
-	ParsedToday          int   `json:"parsed_today"`
-	LastParseTime        int64 `json:"last_parse_time"`
-	AverageElementsCount int   `json:"average_elements_count"`
-	ParseErrors          int   `json:"parse_errors"`
+	TotalProcesses  int `json:"total_processes"`
+	ActiveProcesses int `json:"active_processes"`
+	ParsedToday     int `json:"parsed_today"`
 }
 
 // DeleteResult result structure for delete operations

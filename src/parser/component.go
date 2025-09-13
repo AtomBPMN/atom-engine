@@ -839,15 +839,9 @@ func (c *Component) handleGetStats(ctx context.Context, request ParserRequest) e
 		response = CreateParserErrorResponse("get_stats_response", request.RequestID, err.Error())
 	} else {
 		statsResult := ParserStatsResult{
-			TotalProcesses:       stats.TotalProcesses,
-			ActiveProcesses:      stats.StatusCounts["active"],
-			ParsedToday:          stats.ParsedToday, // Use real parsed today count
-			LastParseTime:        0,                 // FIXME: Implement parse time tracking
-			AverageElementsCount: 0,                 // FIXME: Implement average calculation
-			ParseErrors:          0,                 // FIXME: Implement parse error tracking
-		}
-		if stats.TotalProcesses > 0 {
-			statsResult.AverageElementsCount = stats.TotalElements / stats.TotalProcesses
+			TotalProcesses:  stats.TotalProcesses,
+			ActiveProcesses: stats.StatusCounts["active"],
+			ParsedToday:     stats.ParsedToday, // Use real parsed today count
 		}
 		response = CreateParserResponse("get_stats_response", request.RequestID, statsResult)
 	}
