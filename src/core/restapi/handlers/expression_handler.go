@@ -180,7 +180,7 @@ func (h *ExpressionHandler) EvaluateExpression(c *gin.Context) {
 		logger.String("expression", req.Expression),
 		logger.String("tenant_id", req.TenantID))
 
-	// Mock implementation for now (would integrate with actual expression component)
+	// FIXME: Expression engine is fully implemented in src/expression/ but REST API still uses mock
 	result, err := h.evaluateExpressionInternal(req.Expression, req.Context)
 	if err != nil {
 		logger.Error("Failed to evaluate expression",
@@ -664,7 +664,7 @@ func (h *ExpressionHandler) convertToBoolean(value interface{}) bool {
 }
 
 func (h *ExpressionHandler) extractVariableNames(expression string) []string {
-	// Mock implementation - would parse expression and extract variable names
+	// FIXME: Use real expression parser to extract variable names
 	variables := []string{}
 
 	// Simple regex-based extraction for demonstration

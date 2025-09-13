@@ -647,10 +647,10 @@ func (ste *ServiceTaskExecutor) createErrorBoundaryForEvent(token *models.Token,
 
 		// Create error boundary subscription
 		subscription := &ErrorBoundarySubscription{
-			TokenID:        token.TokenID,
-			ElementID:      eventID,
-			AttachedToRef:  token.CurrentElementID,
-			ErrorRef:       "", // ErrorRef extraction not implemented
+			TokenID:       token.TokenID,
+			ElementID:     eventID,
+			AttachedToRef: token.CurrentElementID,
+			// ErrorRef:       "", // DEAD CODE: ErrorRef field not used anywhere in codebase
 			ErrorCode:      errorCode,
 			ErrorName:      errorName,
 			CancelActivity: cancelActivity,

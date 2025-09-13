@@ -124,7 +124,7 @@ func (s *processServiceServer) GetProcessInstanceStatus(ctx context.Context, req
 		UpdatedAt:       result.UpdatedAt,
 		ProcessId:       result.ProcessID,
 		ProcessKey:      result.ProcessKey,
-		ProcessVersion:  1, // TODO: Get actual version from process instance
+		ProcessVersion:  int32(result.ProcessVersion), // Use actual version from process instance
 	}, nil
 }
 

@@ -63,6 +63,14 @@ func (btm *BoundaryTimerManager) CreateBoundaryTimer(timerRequest *TimerRequest)
 		return fmt.Errorf("timewheel component not available")
 	}
 
+	// Get process version from ProcessInstanceID
+	processVersion := 1 // Default fallback
+	if btm.storage != nil {
+		if instance, err := btm.storage.LoadProcessInstance(timerRequest.ProcessInstanceID); err == nil && instance != nil {
+			processVersion = instance.ProcessVersion
+		}
+	}
+
 	// Create timewheel timer request for boundary timer
 	twRequest := timewheel.TimerRequest{
 		ElementID:         timerRequest.ElementID,
@@ -71,7 +79,7 @@ func (btm *BoundaryTimerManager) CreateBoundaryTimer(timerRequest *TimerRequest)
 		TimerType:         models.TimerTypeBoundary, // Boundary timer type
 		ProcessContext: &models.TimerProcessContext{
 			ProcessKey:      timerRequest.ProcessKey,
-			ProcessVersion:  1, // Process version extraction not implemented
+			ProcessVersion:  processVersion, // Use actual version from process instance
 			ProcessName:     "Boundary Timer",
 			ComponentSource: "process",
 		},

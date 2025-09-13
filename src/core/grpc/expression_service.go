@@ -185,7 +185,7 @@ func (s *expressionServiceServer) ParseExpression(ctx context.Context, req *expr
 		}, nil
 	}
 
-	// Create mock AST structure
+	// FIXME: Expression engine is fully implemented in src/expression/ but gRPC service still uses mock AST
 	ast := map[string]interface{}{
 		"type":       "expression",
 		"expression": req.Expression,

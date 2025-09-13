@@ -842,9 +842,9 @@ func (c *Component) handleGetStats(ctx context.Context, request ParserRequest) e
 			TotalProcesses:       stats.TotalProcesses,
 			ActiveProcesses:      stats.StatusCounts["active"],
 			ParsedToday:          stats.ParsedToday, // Use real parsed today count
-			LastParseTime:        0,                 // Last parse time not implemented
-			AverageElementsCount: 0,                 // Average calculation not implemented
-			ParseErrors:          0,                 // Parse error tracking not implemented
+			LastParseTime:        0,                 // FIXME: Implement parse time tracking
+			AverageElementsCount: 0,                 // FIXME: Implement average calculation
+			ParseErrors:          0,                 // FIXME: Implement parse error tracking
 		}
 		if stats.TotalProcesses > 0 {
 			statsResult.AverageElementsCount = stats.TotalElements / stats.TotalProcesses

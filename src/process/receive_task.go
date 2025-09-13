@@ -10,6 +10,8 @@ package process
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"atom-engine/src/core/logger"
@@ -163,13 +165,16 @@ func (rte *ReceiveTaskExecutor) Execute(token *models.Token, element map[string]
 			logger.String("message_name", messageName),
 			logger.String("correlation_key", correlationKey))
 
+		// Extract process version from token's ProcessKey
+		processVersion := extractVersionFromKey(token.ProcessKey)
+
 		// Create message subscription
 		// Создаем подписку на сообщение
 		subscription := &models.ProcessMessageSubscription{
 			ID:                   models.GenerateID(),
 			TenantID:             "DEFAULT_TENANT",
 			ProcessDefinitionKey: token.ProcessKey,
-			ProcessVersion:       1,                      // Default version
+			ProcessVersion:       processVersion, // Use actual version from ProcessKey
 			StartEventID:         token.CurrentElementID, // This is the receive task ID
 			MessageName:          messageName,
 			CorrelationKey:       correlationKey,
@@ -581,10 +586,10 @@ func (rte *ReceiveTaskExecutor) createErrorBoundaryForEvent(token *models.Token,
 
 		// Create error boundary subscription
 		subscription := &ErrorBoundarySubscription{
-			TokenID:        token.TokenID,
-			ElementID:      eventID,
-			AttachedToRef:  token.CurrentElementID,
-			ErrorRef:       "", // ErrorRef extraction not implemented
+			TokenID:       token.TokenID,
+			ElementID:     eventID,
+			AttachedToRef: token.CurrentElementID,
+			// ErrorRef:       "", // DEAD CODE: ErrorRef field not used anywhere in codebase
 			ErrorCode:      errorCode,
 			ErrorName:      errorName,
 			CancelActivity: cancelActivity,
@@ -647,6 +652,19 @@ func (rte *ReceiveTaskExecutor) getMessageNameByReference(messageRef string, tok
 	}
 
 	return ""
+}
+
+// extractVersionFromKey extracts version from process key
+func extractVersionFromKey(processKey string) int {
+	if strings.Contains(processKey, ":v") {
+		parts := strings.Split(processKey, ":v")
+		if len(parts) > 1 {
+			if version, err := strconv.Atoi(parts[1]); err == nil {
+				return version
+			}
+		}
+	}
+	return 1
 }
 
 // extractCorrelationKeyFromMessage extracts correlation key from message definition

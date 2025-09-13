@@ -62,6 +62,14 @@ func (tc *TimerCallbacks) CreateTimer(timerRequest *TimerRequest) error {
 		return fmt.Errorf("timewheel component not available")
 	}
 
+	// Get process version from ProcessInstanceID
+	processVersion := 1 // Default fallback
+	if tc.storage != nil {
+		if instance, err := tc.storage.LoadProcessInstance(timerRequest.ProcessInstanceID); err == nil && instance != nil {
+			processVersion = instance.ProcessVersion
+		}
+	}
+
 	// Create timewheel timer request
 	twRequest := timewheel.TimerRequest{
 		ElementID:         timerRequest.ElementID,
@@ -70,7 +78,7 @@ func (tc *TimerCallbacks) CreateTimer(timerRequest *TimerRequest) error {
 		TimerType:         models.TimerTypeEvent,
 		ProcessContext: &models.TimerProcessContext{
 			ProcessKey:      timerRequest.ProcessKey,
-			ProcessVersion:  1, // Process version extraction not implemented
+			ProcessVersion:  processVersion, // Use actual version from process instance
 			ProcessName:     "Process Timer",
 			ComponentSource: "process",
 		},

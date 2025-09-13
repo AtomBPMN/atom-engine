@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -379,12 +380,15 @@ func (c *Component) handleCreateSubscription(ctx context.Context, request Messag
 		return c.sendResponse(response)
 	}
 
+	// Extract process version from ProcessKey
+	processVersion := extractVersionFromKey(payload.ProcessKey)
+
 	// Create ProcessMessageSubscription from payload
 	subscription := &models.ProcessMessageSubscription{
 		ID:                   models.GenerateID(),
 		TenantID:             payload.TenantID,
 		ProcessDefinitionKey: payload.ProcessKey,
-		ProcessVersion:       1, // Default version
+		ProcessVersion:       processVersion, // Use actual version from ProcessKey
 		StartEventID:         payload.ElementID,
 		MessageName:          payload.MessageName,
 		MessageRef:           payload.MessageName,
@@ -550,4 +554,17 @@ func (c *Component) sendResponse(response MessageResponse) error {
 	}
 
 	return nil
+}
+
+// extractVersionFromKey extracts version from process key
+func extractVersionFromKey(processKey string) int {
+	if strings.Contains(processKey, ":v") {
+		parts := strings.Split(processKey, ":v")
+		if len(parts) > 1 {
+			if version, err := strconv.Atoi(parts[1]); err == nil {
+				return version
+			}
+		}
+	}
+	return 1
 }

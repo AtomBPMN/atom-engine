@@ -315,7 +315,7 @@ func (d *DaemonCommand) ExpressionTest() error {
 		{
 			Name:           "test1",
 			Context:        testCasesJSON,
-			ExpectedResult: "true", // Placeholder
+			ExpectedResult: "true", // FIXME: Parse expected result from test cases JSON
 		},
 	}
 
