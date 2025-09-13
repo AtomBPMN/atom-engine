@@ -388,7 +388,7 @@ func (c *Component) handleCreateSubscription(ctx context.Context, request Messag
 		ID:                   models.GenerateID(),
 		TenantID:             payload.TenantID,
 		ProcessDefinitionKey: payload.ProcessKey,
-		ProcessVersion:       processVersion, // Use actual version from ProcessKey
+		ProcessVersion:       int32(processVersion), // Use actual version from ProcessKey
 		StartEventID:         payload.ElementID,
 		MessageName:          payload.MessageName,
 		MessageRef:           payload.MessageName,
@@ -568,3 +568,4 @@ func extractVersionFromKey(processKey string) int {
 	}
 	return 1
 }
+

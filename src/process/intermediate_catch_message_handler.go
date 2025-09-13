@@ -10,8 +10,6 @@ package process
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"atom-engine/src/core/logger"
@@ -198,7 +196,7 @@ func (icmh *IntermediateCatchMessageHandler) HandleMessageEvent(token *models.To
 			ID:                   models.GenerateID(),
 			TenantID:             "DEFAULT_TENANT",
 			ProcessDefinitionKey: token.ProcessKey,
-			ProcessVersion:       processVersion, // Use actual version from ProcessKey
+			ProcessVersion:       int32(processVersion), // Use actual version from ProcessKey
 			StartEventID:         token.CurrentElementID,
 			MessageName:          messageName,
 			CorrelationKey:       correlationKey,
@@ -510,15 +508,3 @@ func (icmh *IntermediateCatchMessageHandler) evaluateCorrelationKeyExpression(co
 	return correlationKey[1:] // Fallback to remove "=" prefix
 }
 
-// extractVersionFromKey extracts version from process key
-func extractVersionFromKey(processKey string) int {
-	if strings.Contains(processKey, ":v") {
-		parts := strings.Split(processKey, ":v")
-		if len(parts) > 1 {
-			if version, err := strconv.Atoi(parts[1]); err == nil {
-				return version
-			}
-		}
-	}
-	return 1
-}

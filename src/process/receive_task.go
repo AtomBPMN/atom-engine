@@ -10,8 +10,6 @@ package process
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"atom-engine/src/core/logger"
@@ -174,7 +172,7 @@ func (rte *ReceiveTaskExecutor) Execute(token *models.Token, element map[string]
 			ID:                   models.GenerateID(),
 			TenantID:             "DEFAULT_TENANT",
 			ProcessDefinitionKey: token.ProcessKey,
-			ProcessVersion:       processVersion, // Use actual version from ProcessKey
+			ProcessVersion:       int32(processVersion), // Use actual version from ProcessKey
 			StartEventID:         token.CurrentElementID, // This is the receive task ID
 			MessageName:          messageName,
 			CorrelationKey:       correlationKey,
@@ -652,19 +650,6 @@ func (rte *ReceiveTaskExecutor) getMessageNameByReference(messageRef string, tok
 	}
 
 	return ""
-}
-
-// extractVersionFromKey extracts version from process key
-func extractVersionFromKey(processKey string) int {
-	if strings.Contains(processKey, ":v") {
-		parts := strings.Split(processKey, ":v")
-		if len(parts) > 1 {
-			if version, err := strconv.Atoi(parts[1]); err == nil {
-				return version
-			}
-		}
-	}
-	return 1
 }
 
 // extractCorrelationKeyFromMessage extracts correlation key from message definition

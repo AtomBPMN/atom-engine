@@ -12,6 +12,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"atom-engine/proto/incidents/incidentspb"
 	"atom-engine/proto/jobs/jobspb"
@@ -124,7 +126,7 @@ func (s *processServiceServer) GetProcessInstanceStatus(ctx context.Context, req
 		UpdatedAt:       result.UpdatedAt,
 		ProcessId:       result.ProcessID,
 		ProcessKey:      result.ProcessKey,
-		ProcessVersion:  int32(result.ProcessVersion), // Use actual version from process instance
+		ProcessVersion:  int32(extractVersionFromKey(result.ProcessKey)), // Extract version from ProcessKey
 	}, nil
 }
 
@@ -785,4 +787,17 @@ func (s *processServiceServer) GetProcessInstanceInfo(ctx context.Context, req *
 		logger.Int("buffered_messages_count", len(externalServices.BufferedMessages)))
 
 	return response, nil
+}
+
+// extractVersionFromKey extracts version from process key
+func extractVersionFromKey(processKey string) int {
+	if strings.Contains(processKey, ":v") {
+		parts := strings.Split(processKey, ":v")
+		if len(parts) > 1 {
+			if version, err := strconv.Atoi(parts[1]); err == nil {
+				return version
+			}
+		}
+	}
+	return 1
 }
