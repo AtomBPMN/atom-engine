@@ -172,7 +172,7 @@ func (rte *ReceiveTaskExecutor) Execute(token *models.Token, element map[string]
 			ID:                   models.GenerateID(),
 			TenantID:             "DEFAULT_TENANT",
 			ProcessDefinitionKey: token.ProcessKey,
-			ProcessVersion:       int32(processVersion), // Use actual version from ProcessKey
+			ProcessVersion:       int32(processVersion),  // Use actual version from ProcessKey
 			StartEventID:         token.CurrentElementID, // This is the receive task ID
 			MessageName:          messageName,
 			CorrelationKey:       correlationKey,
@@ -450,6 +450,20 @@ func (rte *ReceiveTaskExecutor) createBoundaryTimerForEvent(token *models.Token,
 			TokenID:           token.TokenID, // Parent token ID for boundary context
 			ProcessInstanceID: token.ProcessInstanceID,
 			ProcessKey:        token.ProcessKey,
+		}
+
+		// Extract boundary event metadata for proper scope tracking
+		// Извлекаем метаданные boundary события для правильного отслеживания scope
+		if attachedToRef, exists := boundaryEvent["attached_to_ref"]; exists {
+			if attachedStr, ok := attachedToRef.(string); ok {
+				timerRequest.AttachedToRef = &attachedStr
+			}
+		}
+
+		if cancelActivity, exists := boundaryEvent["cancel_activity"]; exists {
+			if cancelBool, ok := cancelActivity.(bool); ok {
+				timerRequest.CancelActivity = &cancelBool
+			}
 		}
 
 		// Set timer definition based on type with FEEL expression evaluation

@@ -202,7 +202,9 @@ func (m *Manager) isParentScopeActive(timer *models.Timer) bool {
 	// Стратегия 1: Проверяем execution token если доступен
 	if timer.ExecutionTokenID != "" && m.storage != nil {
 		if token, err := m.storage.LoadToken(timer.ExecutionTokenID); err == nil {
-			isActive := token.State == models.TokenStateActive
+			// For boundary timers, both ACTIVE and WAITING tokens indicate active scope
+			// Для boundary таймеров и ACTIVE и WAITING токены указывают на активный scope
+			isActive := token.State == models.TokenStateActive || token.State == models.TokenStateWaiting
 			logger.Debug("Boundary timer parent scope check via execution token",
 				logger.String("timer_id", timer.ID),
 				logger.String("token_id", timer.ExecutionTokenID),
@@ -230,18 +232,21 @@ func (m *Manager) isParentScopeActive(timer *models.Timer) bool {
 	if timer.ProcessInstanceID != "" && m.storage != nil {
 		activeTokens, err := m.storage.LoadTokensByProcessInstance(timer.ProcessInstanceID)
 		if err == nil {
-			// If there are any active tokens in the process instance, assume scope is active
-			// Если есть активные токены в экземпляре процесса, считаем scope активным
+			// If there are any active or waiting tokens in the process instance, assume scope is active
+			// Если есть активные или ожидающие токены в экземпляре процесса, считаем scope активным
 			for _, token := range activeTokens {
-				if token.State == models.TokenStateActive {
-					logger.Debug("Found active tokens in process instance - scope considered active",
+				// For boundary timers, both ACTIVE and WAITING tokens indicate active scope
+				// Для boundary таймеров и ACTIVE и WAITING токены указывают на активный scope
+				if token.State == models.TokenStateActive || token.State == models.TokenStateWaiting {
+					logger.Debug("Found active/waiting tokens in process instance - scope considered active",
 						logger.String("timer_id", timer.ID),
 						logger.String("process_instance_id", timer.ProcessInstanceID),
+						logger.String("token_state", string(token.State)),
 						logger.Int("active_tokens_count", len(activeTokens)))
 					return true
 				}
 			}
-			logger.Debug("No active tokens found in process instance - scope considered inactive",
+			logger.Debug("No active/waiting tokens found in process instance - scope considered inactive",
 				logger.String("timer_id", timer.ID),
 				logger.String("process_instance_id", timer.ProcessInstanceID))
 			return false
@@ -273,19 +278,23 @@ func (m *Manager) checkAttachedActivityStatus(processInstanceID, attachedElement
 		return false
 	}
 
-	// Look for active tokens on the attached activity
-	// Ищем активные токены на привязанной активности
+	// Look for active or waiting tokens on the attached activity
+	// Ищем активные или ожидающие токены на привязанной активности
 	for _, token := range tokens {
-		if token.State == models.TokenStateActive && token.CurrentElementID == attachedElementID {
-			logger.Debug("Found active token on attached activity",
+		// For boundary timers, both ACTIVE and WAITING tokens indicate active scope
+		// Для boundary таймеров и ACTIVE и WAITING токены указывают на активный scope
+		if (token.State == models.TokenStateActive || token.State == models.TokenStateWaiting) &&
+			token.CurrentElementID == attachedElementID {
+			logger.Debug("Found active/waiting token on attached activity",
 				logger.String("timer_id", timerID),
 				logger.String("attached_element_id", attachedElementID),
-				logger.String("token_id", token.TokenID))
+				logger.String("token_id", token.TokenID),
+				logger.String("token_state", string(token.State)))
 			return true
 		}
 	}
 
-	logger.Debug("No active tokens found on attached activity",
+	logger.Debug("No active/waiting tokens found on attached activity",
 		logger.String("timer_id", timerID),
 		logger.String("attached_element_id", attachedElementID),
 		logger.Int("total_tokens_checked", len(tokens)))

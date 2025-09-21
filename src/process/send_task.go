@@ -369,6 +369,20 @@ func (ste *SendTaskExecutor) createBoundaryTimerForEvent(token *models.Token, ev
 			ProcessKey:        token.ProcessKey,
 		}
 
+		// Extract boundary event metadata for proper scope tracking
+		// Извлекаем метаданные boundary события для правильного отслеживания scope
+		if attachedToRef, exists := boundaryEvent["attached_to_ref"]; exists {
+			if attachedStr, ok := attachedToRef.(string); ok {
+				timerRequest.AttachedToRef = &attachedStr
+			}
+		}
+
+		if cancelActivity, exists := boundaryEvent["cancel_activity"]; exists {
+			if cancelBool, ok := cancelActivity.(bool); ok {
+				timerRequest.CancelActivity = &cancelBool
+			}
+		}
+
 		// Set timer definition based on type with FEEL expression evaluation
 		// Устанавливаем timer определение в зависимости от типа с evaluation FEEL expressions
 		if duration, exists := timerMap["duration"]; exists {

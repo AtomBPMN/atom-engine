@@ -96,6 +96,15 @@ func (btm *BoundaryTimerManager) CreateBoundaryTimer(timerRequest *TimerRequest)
 		return fmt.Errorf("no timer definition provided")
 	}
 
+	// Set boundary timer metadata for proper scope tracking
+	// Устанавливаем метаданные boundary timer для правильного отслеживания scope
+	if timerRequest.AttachedToRef != nil {
+		twRequest.AttachedToRef = timerRequest.AttachedToRef
+	}
+	if timerRequest.CancelActivity != nil {
+		twRequest.CancelActivity = timerRequest.CancelActivity
+	}
+
 	// Create schedule timer message
 	messageJSON, err := timewheel.CreateScheduleTimerMessage(twRequest)
 	if err != nil {

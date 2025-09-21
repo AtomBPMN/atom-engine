@@ -117,6 +117,10 @@ type TimerRequest struct {
 	TimeDuration *string `json:"time_duration,omitempty"` // "PT30S"
 	TimeDate     *string `json:"time_date,omitempty"`     // "2025-12-31T23:59:59Z"
 	TimeCycle    *string `json:"time_cycle,omitempty"`    // "R3/PT20S"
+
+	// Boundary timer specific metadata
+	AttachedToRef  *string `json:"attached_to_ref,omitempty"` // Element ID this boundary timer is attached to
+	CancelActivity *bool   `json:"cancel_activity,omitempty"` // Whether this is interrupting boundary timer
 }
 
 // ExecutionResult represents result of element execution
