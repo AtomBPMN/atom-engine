@@ -120,14 +120,88 @@ func (er *ExecutorRegistry) GetExecutor(elementType string) (ElementExecutor, bo
 // GetServiceTaskExecutor gets appropriate executor for service task
 // Получает подходящий исполнитель для service task
 func (er *ExecutorRegistry) GetServiceTaskExecutor(element map[string]interface{}) (ElementExecutor, bool) {
-	// Try HTTP connector executor first
-	httpExecutor := NewHttpConnectorExecutor(er.component)
+	// Check email connector
+	if er.isEmailConnector(element) {
+		return NewEmailConnectorExecutor(er.component), true
+	}
+
+	// Check HTTP connector
 	if er.isHttpConnector(element) {
-		return httpExecutor, true
+		return NewHttpConnectorExecutor(er.component), true
 	}
 
 	// Use regular service task executor
 	return NewServiceTaskExecutor(er.component), true
+}
+
+// isEmailConnector checks if element is email connector
+// Проверяет, является ли элемент email коннектором
+func (er *ExecutorRegistry) isEmailConnector(element map[string]interface{}) bool {
+	logger.Debug("Checking if element is email connector", logger.String("element_id", getStringValue(element["id"])))
+
+	extensionElements, exists := element["extension_elements"]
+	if !exists {
+		logger.Debug("No extension_elements found")
+		return false
+	}
+
+	extElementsList, ok := extensionElements.([]interface{})
+	if !ok {
+		logger.Debug("extension_elements is not array")
+		return false
+	}
+
+	for _, extElement := range extElementsList {
+		extElementMap, ok := extElement.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		extensions, exists := extElementMap["extensions"]
+		if !exists {
+			continue
+		}
+
+		extensionsList, ok := extensions.([]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, ext := range extensionsList {
+			extMap, ok := ext.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			extType, exists := extMap["type"]
+			if !exists || extType != "taskDefinition" {
+				continue
+			}
+
+			logger.Debug("Found taskDefinition extension")
+
+			taskDef, exists := extMap["task_definition"]
+			if !exists {
+				logger.Debug("No task_definition data found")
+				continue
+			}
+
+			taskDefMap, ok := taskDef.(map[string]interface{})
+			if !ok {
+				logger.Debug("task_definition is not a map")
+				continue
+			}
+
+			jobType, _ := taskDefMap["type"].(string)
+			logger.Debug("Task definition type found", logger.String("type", jobType))
+			isEmail := jobType == "io.camunda:email:1"
+			logger.Debug("Email connector check result", logger.Bool("isEmailConnector", isEmail))
+			return isEmail
+		}
+	}
+
+	logger.Debug("No taskDefinition found")
+	return false
 }
 
 // isHttpConnector checks if element is HTTP connector
