@@ -1,0 +1,169 @@
+# Atom Engine Development Configuration
+# Конфигурация Atom Engine для разработки
+
+# Instance name for this deployment
+# Имя инстанса для этого развертывания
+instance_name: "atom-engine"
+
+# Base path for all relative paths in configuration
+# Базовый путь для всех относительных путей в конфигурации
+base_path: "some PATH"
+
+# Database configuration (relative to base_path)
+# Конфигурация базы данных (относительно base_path)
+database:
+  path: "data/base"
+
+# gRPC server configuration
+# Конфигурация gRPC сервера
+grpc:
+  host: "localhost"
+  port: 27500
+
+# REST API server configuration
+# Конфигурация REST API сервера
+rest_api:
+  host: "localhost"
+  port: 27555
+
+# Storage configuration (relative to base_path)
+# Конфигурация хранилища (относительно base_path)
+storage:
+  directory: "data"
+  type: "badger"
+  options:
+    # Basic storage options / Базовые настройки хранилища
+    sync_writes: false  # Disable for better performance / Отключить для лучшей производительности
+    value_log_file_size: 1073741824  # 1GB value log file size / Размер файла value log в байтах
+    
+    # Performance optimization options / Настройки оптимизации производительности
+    performance:
+      # Memory settings / Настройки памяти
+      mem_table_size: 67108864           # 64MB memtable size / Размер мемтаблицы в байтах
+      num_memtables: 5                   # Number of memtables / Количество мемтаблиц
+      num_level_zero_tables: 5           # L0 tables before compaction / Количество L0 таблиц до компакции  
+      num_level_zero_tables_stall: 15    # L0 tables before stalling / Количество L0 таблиц до блокировки
+      
+      # Cache settings / Настройки кэширования
+      value_cache_size: 268435456        # 256MB value cache / Размер кэша значений в байтах
+      block_cache_size: 268435456        # 256MB block cache / Размер блочного кэша в байтах
+      index_cache_size: 134217728        # 128MB index cache / Размер кэша индексов в байтах
+      
+      # Table and file settings / Настройки таблиц и файлов
+      base_table_size: 67108864          # 64MB base table size / Базовый размер таблицы в байтах
+      max_table_size: 134217728          # 128MB max table size / Максимальный размер таблицы в байтах
+      level_size_multiplier: 10          # Level size multiplier / Множитель размера уровня
+      
+      # Compaction settings / Настройки компакции
+      num_compactors: 4                  # Number of compaction workers / Количество воркеров компакции
+      compact_l0_on_close: true          # Compact L0 on close / Компактировать L0 при закрытии
+      
+      # I/O settings / Настройки ввода-вывода
+      table_loading_mode: "memory_map"   # memory_map or file_io / Режим загрузки таблиц
+      value_log_loading_mode: "file_io"  # memory_map or file_io / Режим загрузки value log
+      
+      # Advanced performance settings / Продвинутые настройки производительности
+      bloom_false_positive: 0.01         # Bloom filter false positive rate / Вероятность ложного срабатывания Bloom фильтра
+      detect_conflicts: false            # Disable conflict detection for speed / Отключить обнаружение конфликтов
+      manage_txns: false                 # Disable transaction management / Отключить управление транзакциями
+      
+      # Batch processing / Пакетная обработка
+      max_batch_count: 128               # Maximum entries per batch / Максимум записей в батче
+      max_batch_size: 16777216           # 16MB maximum batch size / Максимальный размер батча в байтах
+    
+# BPMN parser configuration (relative to base_path)
+# Конфигурация BPMN парсера (относительно base_path)
+bpmn:
+  # Directory for storing original BPMN files
+  # Директория для хранения оригинальных BPMN файлов
+  path: "bpmn/"
+  
+  # Store original BPMN files alongside parsed JSON
+  # Сохранять оригинальные BPMN файлы вместе с распарсенным JSON
+  storage_original: true
+  
+  # Enable BPMN structure validation during parsing
+  # Включить валидацию структуры BPMN при парсинге
+  validation: true
+
+# Logger configuration (relative to base_path)
+# Конфигурация логирования (относительно base_path)
+logger:
+  # Log level: debug, info, warn, error, fatal
+  # Уровень логирования: debug, info, warn, error, fatal
+  level: "debug"
+  
+  # Log format: json, text
+  # Формат логов: json, text
+  format: "text"
+  
+  # Directory for log files (relative to base_path)
+  # Директория для файлов логов (относительно base_path)
+  directory: "logs"
+  
+  # Maximum size of a single log file in MB
+  # Максимальный размер одного файла лога в МБ
+  max_size: 50
+  
+  # Maximum age of log files in days
+  # Максимальный возраст файлов логов в днях
+  max_age: 7
+  
+  # Maximum number of backup log files to keep
+  # Максимальное количество файлов резервных копий логов
+  max_backups: 5
+  
+  # Enable console output alongside file logging
+  # Включить вывод в консоль наряду с записью в файл
+  enable_console: true
+
+# Authorization configuration
+# Конфигурация авторизации
+auth:
+  # Enable/disable authentication (disabled by default for backward compatibility)
+  # Включить/отключить аутентификацию (отключена по умолчанию для обратной совместимости)
+  enabled: true
+  
+  # Global IP whitelist for authorization (localhost always allowed)
+  # Глобальный whitelist IP адресов для авторизации (localhost всегда разрешен)
+  allowed_hosts:
+    - "192.168.1.0/24"      # Local network
+    - "10.0.0.0/8"          # Internal network
+    - "172.16.0.0/12"       # Docker networks
+    # - "203.0.113.10"        # Specific external server
+  
+  # API keys for client authentication
+  # API ключи для аутентификации клиентов
+  api_keys:
+    # Example API key for development (CHANGE IN PRODUCTION!)
+    # Примерный API ключ для разработки (ИЗМЕНИТЬ В ПРОДАКШЕНЕ!)
+    - key: "ak_dev_example_AbC123XyZ456"
+      name: "Development Key"
+      permissions: ["*"]  # Full access
+      # allowed_hosts: ["192.168.1.100"]  # Optional per-key IP restrictions
+    
+    # Example monitoring service key
+    # Примерный ключ для мониторинга
+    # - key: "ak_monitor_service_dEf456UvW789"
+    #   name: "Monitoring Service"
+    #   permissions: ["read"]  # Read-only access
+    
+    # Example backup service key
+    # Примерный ключ для backup сервиса
+    # - key: "ak_backup_service_gHi789RsT012"
+    #   name: "Backup Service"
+    #   permissions: ["storage", "process:read"]
+    #   allowed_hosts: ["10.0.0.10"]  # Only specific host
+  
+  # Rate limiting configuration
+  # Конфигурация ограничения запросов
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 100  # Maximum requests per minute per client/API key
+  
+  # Audit logging configuration
+  # Конфигурация аудита безопасности
+  audit:
+    enabled: true
+    log_failed_attempts: true    # Log failed authentication attempts
+    log_successful_auth: false   # Log successful authentications (can be noisy)

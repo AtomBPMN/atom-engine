@@ -1,0 +1,20 @@
+Enhance project structure and add golangci-lint configuration
+
+- Updated .gitignore to include golangci-lint configuration files.
+- Modified Makefile to add linting commands for code analysis.
+- Expanded README with details on linting and code quality checks.
+- Fixed multiple lll (line length) errors across the codebase by reformatting long function signatures, method calls, and interface definitions to comply with 120 character limit.
+- Refactored function signatures in core, process, storage, messages, jobs, and other components to improve code readability while maintaining functionality.
+
+These changes improve project maintainability and ensure adherence to coding standards.
+
+Улучшение структуры проекта и добавление конфигурации golangci-lint
+
+- Обновлен .gitignore для включения файлов конфигурации golangci-lint.
+- Изменен Makefile для добавления команд линтинга для анализа кода.
+- Расширен README с деталями о линтинге и проверках качества кода.
+- Исправлены множественные ошибки lll (длина строки) по всему коду путем переформатирования длинных сигнатур функций, вызовов методов и определений интерфейсов для соответствия лимиту в 120 символов.
+- Рефакторинг сигнатур функций в core, process, storage, messages, jobs и других компонентах для улучшения читаемости кода при сохранении функциональности.
+
+Эти изменения улучшают поддерживаемость проекта и обеспечивают соблюдение стандартов кодирования.
+

@@ -1,0 +1,115 @@
+# golangci-lint configuration example
+# Copy this file to .golangci.yml and customize for your local setup
+# Local .golangci.yml is ignored by git
+
+version: 2
+
+run:
+  timeout: 5m
+  tests: true
+  skip-dirs:
+    - build
+    - test
+    - proto
+    - vendor
+    - FIX
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*_test\\.go$"
+
+output:
+  print-issued-lines: true
+  print-linter-name: true
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - dupImport
+      - ifElseChain
+    enabled-checks:
+      - importShadow
+      - paramTypeCombine
+      - typeAssertChain
+      - rangeValCopy
+      - hugeParam
+      - singleCaseSwitch
+      - emptyStringTest
+      - unnamedResult
+      - unnecessaryBlock
+      - builtinShadow
+      - nestingReduce
+
+  gocyclo:
+    min-complexity: 15
+
+  govet:
+    check-shadowing: true
+    enable-all: true
+
+  gosec:
+    severity: medium
+    confidence: medium
+    excludes:
+      - G101
+      - G204
+
+  dupl:
+    threshold: 100
+
+  lll:
+    line-length: 120
+    tab-width: 4
+
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+
+
+  funlen:
+    lines: 300
+    statements: 50
+
+linters:
+  enable:
+    - gocritic
+    - govet
+    - gosec
+    - gocyclo
+    - dupl
+    - staticcheck
+    - ineffassign
+    - goconst
+    - lll
+    - funlen
+    - errcheck
+    - unused
+    - unparam
+    - misspell
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gocyclo
+        - funlen
+    - path: proto/
+      linters:
+        - all
+    - path: build/
+      linters:
+        - all
+

@@ -1,0 +1,124 @@
+/*
+This file is part of the AtomBPMN (R) project.
+Copyright (c) 2025 Matreska Market LLC (ООО «Matreska Market»).
+Authors: Matreska Team.
+
+This project is dual-licensed under AGPL-3.0 and AtomBPMN Commercial License.
+*/
+
+syntax = "proto3";
+
+package atom.timewheel.v1;
+
+option go_package = "atom-engine/proto/timewheel/timewheelpb";
+
+// TimeWheel service for timer operations
+service TimeWheelService {
+  // Add timer to time wheel
+  rpc AddTimer(AddTimerRequest) returns (AddTimerResponse);
+  
+  // Remove timer from time wheel
+  rpc RemoveTimer(RemoveTimerRequest) returns (RemoveTimerResponse);
+  
+  // Get timer status
+  rpc GetTimerStatus(GetTimerStatusRequest) returns (GetTimerStatusResponse);
+  
+  // Get time wheel statistics
+  rpc GetTimeWheelStats(GetTimeWheelStatsRequest) returns (GetTimeWheelStatsResponse);
+  
+  // List all timers
+  rpc ListTimers(ListTimersRequest) returns (ListTimersResponse);
+}
+
+// Request for adding timer
+message AddTimerRequest {
+  string timer_id = 1;
+  int64 delay_ms = 2;           // Deprecated: use duration instead
+  string callback_data = 3;
+  bool repeating = 4;
+  int64 interval_ms = 5;        // Deprecated: use interval instead
+  string duration = 6;          // ISO 8601 duration (PT30S, PT1H, etc.)
+  string interval = 7;          // ISO 8601 repeating interval (R5/PT30S, etc.)
+}
+
+// Response for adding timer
+message AddTimerResponse {
+  string timer_id = 1;
+  bool success = 2;
+  string message = 3;
+  int64 scheduled_at = 4;
+}
+
+// Request for removing timer
+message RemoveTimerRequest {
+  string timer_id = 1;
+}
+
+// Response for removing timer
+message RemoveTimerResponse {
+  string timer_id = 1;
+  bool success = 2;
+  string message = 3;
+}
+
+// Request for timer status
+message GetTimerStatusRequest {
+  string timer_id = 1;
+}
+
+// Response for timer status
+message GetTimerStatusResponse {
+  string timer_id = 1;
+  string status = 2; // pending, fired, cancelled
+  int64 scheduled_at = 3;
+  int64 remaining_ms = 4;
+  bool is_repeating = 5;
+}
+
+// Request for time wheel statistics
+message GetTimeWheelStatsRequest {}
+
+// Response for time wheel statistics
+message GetTimeWheelStatsResponse {
+  int32 total_timers = 1;
+  int32 pending_timers = 2;
+  int32 fired_timers = 3;
+  int32 cancelled_timers = 4;
+  int64 current_tick = 5;
+  int32 slots_count = 6;
+  map<string, int32> timer_types = 7;
+}
+
+// Request for listing timers
+message ListTimersRequest {
+  string status_filter = 1; // Optional: filter by status (SCHEDULED, FIRED, CANCELLED)
+  int32 limit = 2;          // Optional: limit number of results (deprecated, use page_size)
+  int32 page_size = 3;      // Number of items per page (default: 20)
+  int32 page = 4;           // Page number (1-based, default: 1)
+  string sort_by = 5;       // Sort field (default: "created_at")
+  string sort_order = 6;    // Sort order: "ASC" or "DESC" (default: "DESC")
+}
+
+// Response for listing timers
+message ListTimersResponse {
+  repeated TimerInfo timers = 1;
+  int32 total_count = 2;
+  int32 page = 3;                 // Current page number
+  int32 page_size = 4;            // Number of items per page
+  int32 total_pages = 5;          // Total number of pages
+}
+
+// Timer information for listing
+message TimerInfo {
+  string timer_id = 1;
+  string element_id = 2;
+  string process_instance_id = 3;
+  string timer_type = 4;
+  string status = 5;
+  int64 scheduled_at = 6;
+  int64 created_at = 7;
+  string time_duration = 8;
+  string time_cycle = 9;
+  int64 remaining_seconds = 10;  // Seconds until timer fires
+  int32 wheel_level = 11;        // Timewheel level (0-4: sec, min, hour, day, year)
+}
