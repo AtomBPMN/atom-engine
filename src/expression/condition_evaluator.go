@@ -128,125 +128,32 @@ func (ce *ConditionEvaluator) EvaluateFeelExpression(
 	ce.logger.Debug("Evaluating FEEL expression",
 		logger.String("expression", expression))
 
-	// Handle boolean expressions like "gate=true", "gate=false"
-	// Обработка булевых выражений типа "gate=true", "gate=false"
-	if strings.Contains(expression, "=") {
-		parts := strings.Split(expression, "=")
-		if len(parts) == 2 {
-			varName := strings.TrimSpace(parts[0])
-			expectedValue := strings.TrimSpace(parts[1])
-
-			ce.logger.Debug("FEEL boolean comparison",
-				logger.String("variable", varName),
-				logger.String("expected", expectedValue))
-
-			// Get variable value
-			// Получаем значение переменной
-			value, exists := variables[varName]
-			if !exists {
-				ce.logger.Warn("FEEL variable not found",
-					logger.String("variable", varName))
-				return false, fmt.Errorf("variable '%s' not found", varName)
-			}
-
-			// Convert expected value to needed type
-			// Преобразуем ожидаемое значение в нужный тип
-			switch strings.ToLower(expectedValue) {
-			case "true":
-				if boolVal, ok := value.(bool); ok {
-					ce.logger.Debug("FEEL boolean result",
-						logger.String("variable", varName),
-						logger.Bool("value", boolVal),
-						logger.Bool("result", boolVal))
-					return boolVal, nil
-				}
-				// Check string representation
-				// Проверяем строковое представление
-				strVal := fmt.Sprintf("%v", value)
-				result := strings.ToLower(strVal) == "true"
-				ce.logger.Debug("FEEL string->boolean result",
-					logger.String("variable", varName),
-					logger.String("value", strVal),
-					logger.Bool("result", result))
-				return result, nil
-
-			case "false":
-				if boolVal, ok := value.(bool); ok {
-					ce.logger.Debug("FEEL boolean result",
-						logger.String("variable", varName),
-						logger.Bool("value", boolVal),
-						logger.Bool("result", !boolVal))
-					return !boolVal, nil
-				}
-				// Check string representation
-				// Проверяем строковое представление
-				strVal := fmt.Sprintf("%v", value)
-				result := strings.ToLower(strVal) == "false"
-				ce.logger.Debug("FEEL string->boolean result",
-					logger.String("variable", varName),
-					logger.String("value", strVal),
-					logger.Bool("result", result))
-				return result, nil
-
-			default:
-				// String comparison
-				// Сравнение как строки
-				actualStr := fmt.Sprintf("%v", value)
-
-				// Remove quotes from string literals if present
-				// Удаляем кавычки из строковых литералов если они есть
-				cleanExpectedValue := expectedValue
-				if len(expectedValue) >= 2 &&
-					((expectedValue[0] == '"' && expectedValue[len(expectedValue)-1] == '"') ||
-						(expectedValue[0] == '\'' && expectedValue[len(expectedValue)-1] == '\'')) {
-					cleanExpectedValue = expectedValue[1 : len(expectedValue)-1]
-					ce.logger.Debug("FEEL removed quotes from expected value",
-						logger.String("original", expectedValue),
-						logger.String("cleaned", cleanExpectedValue))
-				}
-
-				result := actualStr == cleanExpectedValue
-				ce.logger.Debug("FEEL string comparison result",
-					logger.String("variable", varName),
-					logger.String("actual", actualStr),
-					logger.String("expected", cleanExpectedValue),
-					logger.Bool("result", result))
-				return result, nil
-			}
-		}
+	// Use VariableEvaluator for all FEEL expressions
+	// Используем VariableEvaluator для всех FEEL выражений
+	result, err := ce.variableEvaluator.EvaluateVariable("="+expression, variables)
+	if err != nil {
+		ce.logger.Warn("Failed to evaluate FEEL expression",
+			logger.String("expression", expression),
+			logger.String("error", err.Error()))
+		return false, err
 	}
 
-	// Handle simple boolean variables like "gate"
-	// Обработка простых булевых переменных типа "gate"
-	if varName := strings.TrimSpace(expression); varName != "" {
-		value, exists := variables[varName]
-		if !exists {
-			ce.logger.Warn("FEEL variable not found",
-				logger.String("variable", varName))
-			return false, fmt.Errorf("variable '%s' not found", varName)
-		}
-
-		// If variable is boolean, return its value
-		// Если переменная булевая, возвращаем её значение
-		if boolVal, ok := value.(bool); ok {
-			ce.logger.Debug("FEEL simple boolean",
-				logger.String("variable", varName),
-				logger.Bool("value", boolVal))
-			return boolVal, nil
-		}
-
-		// If variable is string, check for "true"
-		// Если переменная строковая, проверяем на "true"
-		strVal := fmt.Sprintf("%v", value)
-		result := strings.ToLower(strVal) == "true"
-		ce.logger.Debug("FEEL string->boolean",
-			logger.String("variable", varName),
-			logger.String("value", strVal),
-			logger.Bool("result", result))
-		return result, nil
+	// Convert result to boolean
+	// Конвертируем результат в boolean
+	if boolVal, ok := result.(bool); ok {
+		ce.logger.Debug("FEEL expression result",
+			logger.String("expression", expression),
+			logger.Bool("result", boolVal))
+		return boolVal, nil
 	}
 
-	ce.logger.Warn("Could not evaluate FEEL expression, returning false",
-		logger.String("expression", expression))
-	return false, fmt.Errorf("unsupported FEEL expression: %s", expression)
+	// If result is not boolean, treat as string and check for "true"
+	// Если результат не boolean, обрабатываем как строку и проверяем на "true"
+	strVal := fmt.Sprintf("%v", result)
+	boolResult := strings.ToLower(strVal) == "true"
+	ce.logger.Debug("FEEL expression converted to boolean",
+		logger.String("expression", expression),
+		logger.String("result_str", strVal),
+		logger.Bool("result_bool", boolResult))
+	return boolResult, nil
 }

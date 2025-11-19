@@ -90,6 +90,30 @@ func (hce *HttpConnectorExecutor) Execute(
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID))
 
+	// Create boundary timers when token enters activity
+	if err := hce.createBoundaryTimers(token, element); err != nil {
+		logger.Error("Failed to create boundary timers",
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("error", err.Error()))
+	}
+
+	// Create error boundary subscriptions when token enters activity
+	logger.Info("About to create error boundary subscriptions",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
+	if err := hce.createErrorBoundaries(token, element); err != nil {
+		logger.Error("Failed to create error boundary subscriptions",
+			logger.String("token_id", token.TokenID),
+			logger.String("element_id", token.CurrentElementID),
+			logger.String("error", err.Error()))
+	}
+
+	logger.Info("Completed error boundary subscriptions processing",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
 	// Extract HTTP configuration from ioMapping
 	config, err := hce.extractHttpConnectorConfig(element, token.Variables)
 	if err != nil {
@@ -154,6 +178,21 @@ func (hce *HttpConnectorExecutor) Execute(
 			Completed: false,
 		}, nil
 	}
+
+	// Apply output mapping (Camunda 8 standard)
+	// Применяем output mapping (стандарт Camunda 8)
+	err = hce.applyOutputMapping(element, token)
+	if err != nil {
+		logger.Warn("Failed to apply output mapping",
+			logger.String("token_id", token.TokenID),
+			logger.String("error", err.Error()))
+		// Continue execution even if output mapping fails
+		// Продолжаем выполнение даже если output mapping не сработал
+	}
+
+	// Log all available variables for debugging
+	// Логируем все доступные переменные для отладки
+	hce.logAvailableVariables(token)
 
 	// Get outgoing sequence flows
 	outgoing, exists := element["outgoing"]
@@ -490,10 +529,14 @@ func (hce *HttpConnectorExecutor) executeHttpRequest(config *HttpConnectorConfig
 	}
 
 	// Apply authentication
-	err = hce.applyAuthentication(req, config)
+	err = hce.applyAuthentication(req, config, parsedURL)
 	if err != nil {
 		return nil, fmt.Errorf("authentication failed: %v", err)
 	}
+
+	// Log request details after authentication (so we can see all headers including auth)
+	// Логируем детали запроса после аутентификации (чтобы видеть все заголовки включая auth)
+	hce.logHttpRequest(req, config, parsedURL)
 
 	// Execute request
 	resp, err := client.Do(req)
@@ -527,6 +570,9 @@ func (hce *HttpConnectorExecutor) executeHttpRequest(config *HttpConnectorConfig
 		}
 	}
 
+	// Log response details
+	hce.logHttpResponse(resp, respBody, bodyData, responseHeaders)
+
 	return &HttpConnectorResponse{
 		Status:  resp.StatusCode,
 		Body:    bodyData,
@@ -539,10 +585,41 @@ func (hce *HttpConnectorExecutor) prepareRequestBody(body interface{}) ([]byte, 
 	logger.Debug("prepareRequestBody called", logger.Any("body", body), logger.String("type", fmt.Sprintf("%T", body)))
 	switch v := body.(type) {
 	case string:
-		// If it's already a string, return as is
+		// Try to parse as JSON first
+		// Пытаемся сначала распарсить как JSON
+		var jsonData interface{}
+		if err := json.Unmarshal([]byte(v), &jsonData); err == nil {
+			// Valid JSON - marshal it back to ensure proper formatting
+			// Валидный JSON - маршалим обратно для правильного форматирования
+			return json.Marshal(jsonData)
+		}
+		// If not valid JSON, check if it looks like JSON object without braces
+		// Если не валидный JSON, проверяем похож ли на JSON объект без фигурных скобок
+		trimmed := strings.TrimSpace(v)
+		if strings.HasPrefix(trimmed, `"`) && strings.Contains(trimmed, ":") {
+			// Looks like JSON object property, wrap in braces
+			// Похоже на свойство JSON объекта, оборачиваем в фигурные скобки
+			wrapped := "{" + trimmed + "}"
+			if err := json.Unmarshal([]byte(wrapped), &jsonData); err == nil {
+				// Successfully wrapped, return as JSON
+				// Успешно обернули, возвращаем как JSON
+				return json.Marshal(jsonData)
+			}
+		}
+		// Return as is if can't parse
+		// Возвращаем как есть если не можем распарсить
 		return []byte(v), nil
 	case []byte:
-		// If it's bytes, return as is
+		// Try to parse as JSON first
+		// Пытаемся сначала распарсить как JSON
+		var jsonData interface{}
+		if err := json.Unmarshal(v, &jsonData); err == nil {
+			// Valid JSON - marshal it back to ensure proper formatting
+			// Валидный JSON - маршалим обратно для правильного форматирования
+			return json.Marshal(jsonData)
+		}
+		// Return as is if not valid JSON
+		// Возвращаем как есть если не валидный JSON
 		return v, nil
 	default:
 		// Marshal as JSON
@@ -551,7 +628,7 @@ func (hce *HttpConnectorExecutor) prepareRequestBody(body interface{}) ([]byte, 
 }
 
 // applyAuthentication applies authentication to the HTTP request
-func (hce *HttpConnectorExecutor) applyAuthentication(req *http.Request, config *HttpConnectorConfig) error {
+func (hce *HttpConnectorExecutor) applyAuthentication(req *http.Request, config *HttpConnectorConfig, parsedURL *url.URL) error {
 	switch config.AuthenticationType {
 	case "basic":
 		if config.AuthenticationUsername == "" || config.AuthenticationPassword == "" {
@@ -566,6 +643,33 @@ func (hce *HttpConnectorExecutor) applyAuthentication(req *http.Request, config 
 		}
 		req.Header.Set("Authorization", "Bearer "+config.AuthenticationBearerToken)
 
+	case "apiKey":
+		if config.AuthenticationAPIKeyName == "" || config.AuthenticationAPIKeyValue == "" {
+			return fmt.Errorf("apiKey authentication requires name and value")
+		}
+		// Support apiKey in headers, query, or cookie
+		// Поддерживаем apiKey в заголовках, query параметрах или cookies
+		switch strings.ToLower(config.AuthenticationAPIKeyIn) {
+		case "header", "headers":
+			req.Header.Set(config.AuthenticationAPIKeyName, config.AuthenticationAPIKeyValue)
+		case "query":
+			if parsedURL.RawQuery == "" {
+				parsedURL.RawQuery = fmt.Sprintf("%s=%s", config.AuthenticationAPIKeyName, url.QueryEscape(config.AuthenticationAPIKeyValue))
+			} else {
+				parsedURL.RawQuery += fmt.Sprintf("&%s=%s", config.AuthenticationAPIKeyName, url.QueryEscape(config.AuthenticationAPIKeyValue))
+			}
+			req.URL = parsedURL
+		case "cookie":
+			req.AddCookie(&http.Cookie{
+				Name:  config.AuthenticationAPIKeyName,
+				Value: config.AuthenticationAPIKeyValue,
+			})
+		default:
+			// Default to header if location not specified
+			// По умолчанию используем заголовок если местоположение не указано
+			req.Header.Set(config.AuthenticationAPIKeyName, config.AuthenticationAPIKeyValue)
+		}
+
 	case "none", "":
 		// No authentication needed
 
@@ -574,6 +678,260 @@ func (hce *HttpConnectorExecutor) applyAuthentication(req *http.Request, config 
 	}
 
 	return nil
+}
+
+// logHttpRequest logs detailed HTTP request information
+func (hce *HttpConnectorExecutor) logHttpRequest(
+	req *http.Request,
+	config *HttpConnectorConfig,
+	parsedURL *url.URL,
+) {
+	var logLines []string
+	logLines = append(logLines, "======REQUEST========")
+	logLines = append(logLines, fmt.Sprintf("METHOD: %s", req.Method))
+	logLines = append(logLines, fmt.Sprintf("URL: %s", parsedURL.String()))
+
+	// Query parameters
+	if parsedURL.RawQuery != "" {
+		logLines = append(logLines, "PARAM:")
+		queryParams := parsedURL.Query()
+		for key, values := range queryParams {
+			for _, value := range values {
+				logLines = append(logLines, fmt.Sprintf("  %s = %s", key, value))
+			}
+		}
+	} else {
+		logLines = append(logLines, "PARAM: (none)")
+	}
+
+	// Headers
+	logLines = append(logLines, "HEADER:")
+	if len(req.Header) > 0 {
+		for key, values := range req.Header {
+			for _, value := range values {
+				// Mask sensitive headers
+				if strings.ToLower(key) == "authorization" {
+					if len(value) > 20 {
+						logLines = append(logLines, fmt.Sprintf("  %s = %s...", key, value[:20]))
+					} else {
+						logLines = append(logLines, fmt.Sprintf("  %s = ***", key))
+					}
+				} else {
+					logLines = append(logLines, fmt.Sprintf("  %s = %s", key, value))
+				}
+			}
+		}
+	} else {
+		logLines = append(logLines, "  (none)")
+	}
+
+	// Body
+	logLines = append(logLines, "PAYLOAD:")
+	if config.Body != nil {
+		bodyBytes, err := hce.prepareRequestBody(config.Body)
+		if err == nil {
+			bodyStr := string(bodyBytes)
+			// Try to format as JSON if possible
+			var jsonData interface{}
+			if err := json.Unmarshal(bodyBytes, &jsonData); err == nil {
+				if formatted, err := json.MarshalIndent(jsonData, "  ", "  "); err == nil {
+					bodyStr = string(formatted)
+				}
+			}
+			logLines = append(logLines, fmt.Sprintf("  %s", bodyStr))
+		} else {
+			logLines = append(logLines, fmt.Sprintf("  (error preparing body: %v)", err))
+		}
+	} else {
+		logLines = append(logLines, "  (empty)")
+	}
+
+	logLines = append(logLines, "====================")
+
+	// Log each line separately for better readability
+	// Логируем каждую строку отдельно для лучшей читаемости
+	for _, line := range logLines {
+		logger.Debug(line)
+	}
+}
+
+// logHttpResponse logs detailed HTTP response information
+func (hce *HttpConnectorExecutor) logHttpResponse(
+	resp *http.Response,
+	respBody []byte,
+	bodyData interface{},
+	responseHeaders map[string]interface{},
+) {
+	var logLines []string
+	logLines = append(logLines, "======RESPONSE==============")
+	logLines = append(logLines, fmt.Sprintf("STATUS: %d %s", resp.StatusCode, resp.Status))
+
+	// Response headers
+	logLines = append(logLines, "HEADER:")
+	if len(responseHeaders) > 0 {
+		for key, value := range responseHeaders {
+			logLines = append(logLines, fmt.Sprintf("  %s = %v", key, value))
+		}
+	} else {
+		logLines = append(logLines, "  (none)")
+	}
+
+	// Response body
+	logLines = append(logLines, "BODY:")
+	if bodyData != nil {
+		var bodyStr string
+		if bodyBytes, ok := bodyData.([]byte); ok {
+			bodyStr = string(bodyBytes)
+		} else if bodyStrVal, ok := bodyData.(string); ok {
+			bodyStr = bodyStrVal
+		} else {
+			// Try to format as JSON
+			if formatted, err := json.MarshalIndent(bodyData, "  ", "  "); err == nil {
+				bodyStr = string(formatted)
+			} else {
+				bodyStr = fmt.Sprintf("%v", bodyData)
+			}
+		}
+
+		// Try to format as JSON if it's a string that looks like JSON
+		if bodyStr != "" {
+			var jsonData interface{}
+			if err := json.Unmarshal([]byte(bodyStr), &jsonData); err == nil {
+				if formatted, err := json.MarshalIndent(jsonData, "  ", "  "); err == nil {
+					bodyStr = string(formatted)
+				}
+			}
+			logLines = append(logLines, fmt.Sprintf("  %s", bodyStr))
+		} else {
+			logLines = append(logLines, "  (empty)")
+		}
+	} else {
+		logLines = append(logLines, "  (empty)")
+	}
+
+	logLines = append(logLines, "=============================")
+
+	// Log each line separately for better readability
+	// Логируем каждую строку отдельно для лучшей читаемости
+	for _, line := range logLines {
+		logger.Debug(line)
+	}
+}
+
+// logAvailableVariables logs all available variables from HTTP response
+// Логирует все доступные переменные из HTTP ответа
+func (hce *HttpConnectorExecutor) logAvailableVariables(
+	token *models.Token,
+) {
+	if token.Variables == nil {
+		return
+	}
+
+	var logLines []string
+	logLines = append(logLines, "")
+	logLines = append(logLines, "======AVAILABLE VARIABLES========")
+	logLines = append(logLines, "Variables you can use in process:")
+	logLines = append(logLines, "")
+
+	// Get response object from variables
+	responseObj, hasResponse := token.Variables["response"]
+	if !hasResponse {
+		logLines = append(logLines, "  (no response variable found)")
+	} else {
+		// Log response.status
+		if responseMap, ok := responseObj.(map[string]interface{}); ok {
+			if status, ok := responseMap["status"]; ok {
+				logLines = append(logLines, fmt.Sprintf("  response.status = %v", status))
+			}
+
+			// Log response.body fields
+			if body, ok := responseMap["body"]; ok {
+				if bodyMap, ok := body.(map[string]interface{}); ok {
+					hce.logMapVariables("response.body", bodyMap, &logLines, 1)
+				} else {
+					logLines = append(logLines, fmt.Sprintf("  response.body = %v", body))
+				}
+			}
+
+			// Log response.headers fields
+			if headers, ok := responseMap["headers"]; ok {
+				if headersMap, ok := headers.(map[string]interface{}); ok {
+					logLines = append(logLines, "")
+					logLines = append(logLines, "  Response headers:")
+					for key, value := range headersMap {
+						logLines = append(logLines, fmt.Sprintf("    response.headers.%s = %v", key, value))
+					}
+				}
+			}
+		}
+	}
+
+	// Log other process variables (except response)
+	hasOtherVars := false
+	for key, value := range token.Variables {
+		if key == "response" {
+			continue
+		}
+		if !hasOtherVars {
+			logLines = append(logLines, "")
+			logLines = append(logLines, "  Other process variables:")
+			hasOtherVars = true
+		}
+		logLines = append(logLines, fmt.Sprintf("    %s = %v", key, value))
+	}
+
+	logLines = append(logLines, "")
+	logLines = append(logLines, "=================================")
+
+	// Log each line separately
+	for _, line := range logLines {
+		logger.Debug(line)
+	}
+}
+
+// logMapVariables recursively logs map variables with proper nesting
+// Рекурсивно логирует переменные map с правильной вложенностью
+func (hce *HttpConnectorExecutor) logMapVariables(
+	prefix string,
+	data map[string]interface{},
+	logLines *[]string,
+	depth int,
+) {
+	if depth > 5 {
+		// Prevent infinite recursion
+		// Предотвращаем бесконечную рекурсию
+		return
+	}
+
+	for key, value := range data {
+		fullKey := fmt.Sprintf("%s.%s", prefix, key)
+		
+		switch v := value.(type) {
+		case map[string]interface{}:
+			// Nested map
+			*logLines = append(*logLines, fmt.Sprintf("  %s = {object}", fullKey))
+			hce.logMapVariables(fullKey, v, logLines, depth+1)
+		case []interface{}:
+			// Array
+			*logLines = append(*logLines, fmt.Sprintf("  %s = [array with %d items]", fullKey, len(v)))
+			// Log array items
+			for i, item := range v {
+				itemKey := fmt.Sprintf("%s[%d]", fullKey, i)
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					*logLines = append(*logLines, fmt.Sprintf("  %s = {object}", itemKey))
+					hce.logMapVariables(itemKey, itemMap, logLines, depth+1)
+				} else {
+					*logLines = append(*logLines, fmt.Sprintf("  %s = %v", itemKey, item))
+				}
+			}
+		case string:
+			// String value - show with quotes
+			*logLines = append(*logLines, fmt.Sprintf("  %s = \"%s\"", fullKey, v))
+		default:
+			// Other types
+			*logLines = append(*logLines, fmt.Sprintf("  %s = %v", fullKey, v))
+		}
+	}
 }
 
 // updateTokenWithHttpResponse updates token variables with HTTP response
@@ -601,6 +959,161 @@ func (hce *HttpConnectorExecutor) updateTokenWithHttpResponse(
 		logger.Int("response_status", response.Status))
 
 	return nil
+}
+
+// applyOutputMapping applies output mapping to token variables (Camunda 8 standard)
+// Применяет output mapping к переменным токена (стандарт Camunda 8)
+func (hce *HttpConnectorExecutor) applyOutputMapping(
+	element map[string]interface{},
+	token *models.Token,
+) error {
+	logger.Debug("Applying output mapping",
+		logger.String("token_id", token.TokenID),
+		logger.String("element_id", token.CurrentElementID))
+
+	// Extract output mappings from element
+	outputs := hce.extractOutputMappings(element)
+	if len(outputs) == 0 {
+		logger.Debug("No output mappings found",
+			logger.String("element_id", token.CurrentElementID))
+		return nil
+	}
+
+	logger.Info("Found output mappings",
+		logger.String("element_id", token.CurrentElementID),
+		logger.Int("count", len(outputs)))
+
+	// Ensure token variables are initialized
+	if token.Variables == nil {
+		token.Variables = make(map[string]interface{})
+	}
+
+	// Apply each output mapping
+	for i, output := range outputs {
+		sourceRaw, sourceExists := output["source"]
+		targetRaw, targetExists := output["target"]
+
+		if !sourceExists || !targetExists {
+			logger.Warn("Output mapping missing source or target",
+				logger.Int("index", i),
+				logger.Any("output", output))
+			continue
+		}
+
+		source, sourceOK := sourceRaw.(string)
+		target, targetOK := targetRaw.(string)
+
+		if !sourceOK || !targetOK {
+			logger.Warn("Output mapping source or target is not a string",
+				logger.Int("index", i),
+				logger.Any("source", sourceRaw),
+				logger.Any("target", targetRaw))
+			continue
+		}
+
+		logger.Debug("Processing output mapping",
+			logger.Int("index", i),
+			logger.String("source", source),
+			logger.String("target", target))
+
+		// Evaluate source expression using token variables
+		value := hce.evaluateInputValue(source, token.Variables)
+
+		// Set target variable
+		token.Variables[target] = value
+
+		logger.Info("Output mapping applied",
+			logger.String("source", source),
+			logger.String("target", target),
+			logger.Any("value", value))
+	}
+
+	return nil
+}
+
+// extractOutputMappings extracts output mappings from element
+// Извлекает output mappings из элемента
+func (hce *HttpConnectorExecutor) extractOutputMappings(
+	element map[string]interface{},
+) []map[string]interface{} {
+	outputs := make([]map[string]interface{}, 0)
+
+	// Get extension elements
+	extensionElements, exists := element["extension_elements"]
+	if !exists {
+		return outputs
+	}
+
+	extElementsList, ok := extensionElements.([]interface{})
+	if !ok {
+		return outputs
+	}
+
+	// Find ioMapping in extension elements
+	for _, extElement := range extElementsList {
+		extElementMap, ok := extElement.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		extensions, exists := extElementMap["extensions"]
+		if !exists {
+			continue
+		}
+
+		extensionsList, ok := extensions.([]interface{})
+		if !ok {
+			continue
+		}
+
+		for _, ext := range extensionsList {
+			extMap, ok := ext.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			extType, exists := extMap["type"]
+			if !exists || extType != "ioMapping" {
+				continue
+			}
+
+			// Found ioMapping - look for structured data first
+			if ioMapping, exists := extMap["io_mapping"]; exists {
+				if ioMappingMap, ok := ioMapping.(map[string]interface{}); ok {
+					if outputsData, exists := ioMappingMap["outputs"]; exists {
+						if outputsList, ok := outputsData.([]interface{}); ok {
+							for _, output := range outputsList {
+								if outputMap, ok := output.(map[string]interface{}); ok {
+									outputs = append(outputs, outputMap)
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// Also check io_mapping_data (legacy structure)
+			if ioMappingData, exists := extMap["io_mapping_data"]; exists {
+				if ioMappingMap, ok := ioMappingData.(map[string]interface{}); ok {
+					if outputsData, exists := ioMappingMap["outputs"]; exists {
+						if outputsList, ok := outputsData.([]interface{}); ok {
+							for _, output := range outputsList {
+								if outputMap, ok := output.(map[string]interface{}); ok {
+									outputs = append(outputs, outputMap)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	logger.Debug("Extracted output mappings",
+		logger.Int("count", len(outputs)),
+		logger.Any("outputs", outputs))
+
+	return outputs
 }
 
 // extractTaskDefinition extracts task definition from element
@@ -759,8 +1272,39 @@ func (hce *HttpConnectorExecutor) processInputs(
 			config.AuthenticationAPIKeyValue = fmt.Sprintf("%v", value)
 		case "authentication.apiKey.in":
 			config.AuthenticationAPIKeyIn = fmt.Sprintf("%v", value)
+		case "authentication.apiKeyLocation":
+			// Support both apiKeyLocation and apiKey.in
+			// Поддерживаем и apiKeyLocation и apiKey.in
+			config.AuthenticationAPIKeyIn = fmt.Sprintf("%v", value)
+		case "authentication.name":
+			// Support both authentication.name and authentication.apiKey.name
+			// Поддерживаем и authentication.name и authentication.apiKey.name
+			config.AuthenticationAPIKeyName = fmt.Sprintf("%v", value)
+		case "authentication.value":
+			// Support both authentication.value and authentication.apiKey.value
+			// Поддерживаем и authentication.value и authentication.apiKey.value
+			config.AuthenticationAPIKeyValue = fmt.Sprintf("%v", value)
 		case "body":
 			config.Body = value
+		case "queryParameters":
+			// Handle queryParameters - can be a map or object
+			// Обрабатываем queryParameters - может быть map или объект
+			if queryMap, ok := value.(map[string]interface{}); ok {
+				// Direct map - add all key-value pairs to QueryParameters
+				// Прямой map - добавляем все пары ключ-значение в QueryParameters
+				for key, val := range queryMap {
+					config.QueryParameters[key] = val
+				}
+				logger.Debug("Added query parameters from map",
+					logger.Int("count", len(queryMap)),
+					logger.Any("params", queryMap))
+			} else {
+				// Try to convert to map
+				// Пытаемся преобразовать в map
+				logger.Debug("Query parameters value is not a map",
+					logger.String("type", fmt.Sprintf("%T", value)),
+					logger.Any("value", value))
+			}
 		case "connectionTimeoutInSeconds":
 			if intVal, ok := value.(int); ok {
 				config.ConnectionTimeoutInSeconds = intVal
@@ -796,4 +1340,424 @@ func (hce *HttpConnectorExecutor) processInputs(
 		logger.Any("headers", config.Headers))
 
 	return config, nil
+}
+
+// createBoundaryTimers creates boundary timers for activity
+func (hce *HttpConnectorExecutor) createBoundaryTimers(token *models.Token, element map[string]interface{}) error {
+	if hce.processComponent == nil {
+		return nil
+	}
+
+	bpmnProcess, err := hce.processComponent.GetBPMNProcessForToken(token)
+	if err != nil {
+		return fmt.Errorf("failed to get BPMN process: %w", err)
+	}
+
+	boundaryEvents := hce.findBoundaryEventsForActivity(token.CurrentElementID, bpmnProcess)
+	if len(boundaryEvents) == 0 {
+		return nil
+	}
+
+	logger.Info("Found boundary events for activity",
+		logger.String("activity_id", token.CurrentElementID),
+		logger.Int("boundary_events_count", len(boundaryEvents)))
+
+	for eventID, boundaryEvent := range boundaryEvents {
+		if err := hce.createBoundaryTimerForEvent(token, eventID, boundaryEvent); err != nil {
+			logger.Error("Failed to create boundary timer",
+				logger.String("token_id", token.TokenID),
+				logger.String("event_id", eventID),
+				logger.String("error", err.Error()))
+			continue
+		}
+	}
+
+	return nil
+}
+
+// findBoundaryEventsForActivity finds boundary events attached to activity
+func (hce *HttpConnectorExecutor) findBoundaryEventsForActivity(
+	activityID string,
+	bpmnProcess map[string]interface{},
+) map[string]map[string]interface{} {
+	boundaryEvents := make(map[string]map[string]interface{})
+
+	elements, exists := bpmnProcess["elements"]
+	if !exists {
+		return boundaryEvents
+	}
+
+	elementsMap, ok := elements.(map[string]interface{})
+	if !ok {
+		return boundaryEvents
+	}
+
+	for elementID, element := range elementsMap {
+		elementMap, ok := element.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		elementType, exists := elementMap["type"]
+		if !exists || elementType != "boundaryEvent" {
+			continue
+		}
+
+		attachedToRef, exists := elementMap["attached_to_ref"]
+		if exists && attachedToRef == activityID {
+			boundaryEvents[elementID] = elementMap
+		}
+	}
+
+	return boundaryEvents
+}
+
+// createBoundaryTimerForEvent creates timer for boundary event if it has timer definition
+func (hce *HttpConnectorExecutor) createBoundaryTimerForEvent(
+	token *models.Token,
+	eventID string,
+	boundaryEvent map[string]interface{},
+) error {
+	eventDefinitions, exists := boundaryEvent["event_definitions"]
+	if !exists {
+		return nil
+	}
+
+	eventDefList, ok := eventDefinitions.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	for _, eventDef := range eventDefList {
+		eventDefMap, ok := eventDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		eventType, exists := eventDefMap["type"]
+		if !exists || eventType != "timerEventDefinition" {
+			continue
+		}
+
+		timerData, exists := eventDefMap["timer"]
+		if !exists {
+			continue
+		}
+
+		timerMap, ok := timerData.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		timerRequest := &TimerRequest{
+			ElementID:         eventID,
+			TokenID:           token.TokenID,
+			ProcessInstanceID: token.ProcessInstanceID,
+			ProcessKey:        token.ProcessKey,
+		}
+
+		if attachedToRef, exists := boundaryEvent["attached_to_ref"]; exists {
+			if attachedStr, ok := attachedToRef.(string); ok {
+				timerRequest.AttachedToRef = &attachedStr
+			}
+		}
+
+		if cancelActivity, exists := boundaryEvent["cancel_activity"]; exists {
+			if cancelBool, ok := cancelActivity.(bool); ok {
+				timerRequest.CancelActivity = &cancelBool
+			}
+		}
+
+		if duration, exists := timerMap["duration"]; exists {
+			if durationStr, ok := duration.(string); ok {
+				evaluatedDuration, err := hce.evaluateTimerExpression(durationStr, token)
+				if err != nil {
+					logger.Error("Failed to evaluate boundary timer duration expression",
+						logger.String("token_id", token.TokenID),
+						logger.String("expression", durationStr),
+						logger.String("error", err.Error()))
+					return fmt.Errorf("failed to evaluate boundary timer duration: %w", err)
+				}
+				evaluatedDurationStr := fmt.Sprintf("%v", evaluatedDuration)
+				timerRequest.TimeDuration = &evaluatedDurationStr
+				logger.Debug("Boundary timer duration evaluated",
+					logger.String("original", durationStr),
+					logger.String("evaluated", evaluatedDurationStr))
+			}
+		} else if cycle, exists := timerMap["cycle"]; exists {
+			if cycleStr, ok := cycle.(string); ok {
+				evaluatedCycle, err := hce.evaluateTimerExpression(cycleStr, token)
+				if err != nil {
+					logger.Error("Failed to evaluate boundary timer cycle expression",
+						logger.String("token_id", token.TokenID),
+						logger.String("expression", cycleStr),
+						logger.String("error", err.Error()))
+					return fmt.Errorf("failed to evaluate boundary timer cycle: %w", err)
+				}
+				evaluatedCycleStr := fmt.Sprintf("%v", evaluatedCycle)
+				timerRequest.TimeCycle = &evaluatedCycleStr
+				logger.Debug("Boundary timer cycle evaluated",
+					logger.String("original", cycleStr),
+					logger.String("evaluated", evaluatedCycleStr))
+			}
+		} else if date, exists := timerMap["date"]; exists {
+			if dateStr, ok := date.(string); ok {
+				evaluatedDate, err := hce.evaluateTimerExpression(dateStr, token)
+				if err != nil {
+					logger.Error("Failed to evaluate boundary timer date expression",
+						logger.String("token_id", token.TokenID),
+						logger.String("expression", dateStr),
+						logger.String("error", err.Error()))
+					return fmt.Errorf("failed to evaluate boundary timer date: %w", err)
+				}
+				evaluatedDateStr := fmt.Sprintf("%v", evaluatedDate)
+				timerRequest.TimeDate = &evaluatedDateStr
+				logger.Debug("Boundary timer date evaluated",
+					logger.String("original", dateStr),
+					logger.String("evaluated", evaluatedDateStr))
+			}
+		}
+
+		timerID, err := hce.processComponent.CreateBoundaryTimerWithID(timerRequest)
+		if err != nil {
+			return fmt.Errorf("failed to create boundary timer: %w", err)
+		}
+
+		logger.Info("Boundary timer created",
+			logger.String("parent_token_id", token.TokenID),
+			logger.String("timer_id", timerID),
+			logger.String("event_id", eventID),
+			logger.String("activity_id", token.CurrentElementID))
+
+		if err := hce.processComponent.LinkBoundaryTimerToToken(token.TokenID, timerID); err != nil {
+			logger.Error("Failed to link boundary timer to token",
+				logger.String("parent_token_id", token.TokenID),
+				logger.String("timer_id", timerID),
+				logger.String("error", err.Error()))
+		}
+	}
+
+	return nil
+}
+
+// createErrorBoundaries creates error boundary subscriptions for activity
+func (hce *HttpConnectorExecutor) createErrorBoundaries(token *models.Token, element map[string]interface{}) error {
+	if hce.processComponent == nil {
+		return nil
+	}
+
+	bpmnProcess, err := hce.processComponent.GetBPMNProcessForToken(token)
+	if err != nil {
+		return fmt.Errorf("failed to get BPMN process: %w", err)
+	}
+
+	boundaryEvents := hce.findBoundaryEventsForActivity(token.CurrentElementID, bpmnProcess)
+	if len(boundaryEvents) == 0 {
+		return nil
+	}
+
+	logger.Info("Found boundary events for error boundary registration",
+		logger.String("activity_id", token.CurrentElementID),
+		logger.Int("boundary_events_count", len(boundaryEvents)))
+
+	for eventID, boundaryEvent := range boundaryEvents {
+		if err := hce.createErrorBoundaryForEvent(token, eventID, boundaryEvent, bpmnProcess); err != nil {
+			logger.Error("Failed to create error boundary subscription",
+				logger.String("token_id", token.TokenID),
+				logger.String("event_id", eventID),
+				logger.String("error", err.Error()))
+			continue
+		}
+	}
+
+	return nil
+}
+
+// createErrorBoundaryForEvent creates error boundary subscription for specific event
+func (hce *HttpConnectorExecutor) createErrorBoundaryForEvent(
+	token *models.Token,
+	eventID string,
+	boundaryEvent interface{},
+	bpmnProcess interface{},
+) error {
+	boundaryEventMap, ok := boundaryEvent.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid boundary event structure")
+	}
+
+	eventDefinitions, exists := boundaryEventMap["event_definitions"]
+	if !exists {
+		return nil
+	}
+
+	eventDefList, ok := eventDefinitions.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	for _, eventDef := range eventDefList {
+		eventDefMap, ok := eventDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		eventType, exists := eventDefMap["type"]
+		if !exists || eventType != "errorEventDefinition" {
+			continue
+		}
+
+		errorCode, errorName := hce.extractErrorInfo(eventDefMap, bpmnProcess)
+
+		cancelActivity := true
+		if cancelActivityAttr, exists := boundaryEventMap["cancel_activity"]; exists {
+			if cancelActivityBool, ok := cancelActivityAttr.(bool); ok {
+				cancelActivity = cancelActivityBool
+			} else if cancelActivityStr, ok := cancelActivityAttr.(string); ok {
+				cancelActivity = cancelActivityStr != "false"
+			}
+		}
+
+		outgoingFlows := hce.getOutgoingFlows(boundaryEventMap)
+
+		subscription := &ErrorBoundarySubscription{
+			TokenID:        token.TokenID,
+			ElementID:      eventID,
+			AttachedToRef:  token.CurrentElementID,
+			ErrorCode:      errorCode,
+			ErrorName:      errorName,
+			CancelActivity: cancelActivity,
+			OutgoingFlows:  outgoingFlows,
+		}
+
+		hce.processComponent.RegisterErrorBoundary(subscription)
+
+		logger.Info("Error boundary subscription created",
+			logger.String("token_id", token.TokenID),
+			logger.String("event_id", eventID),
+			logger.String("error_code", errorCode),
+			logger.Bool("cancel_activity", cancelActivity))
+
+		return nil
+	}
+
+	return nil
+}
+
+// extractErrorInfo extracts error code and name from error event definition
+func (hce *HttpConnectorExecutor) extractErrorInfo(
+	eventDef map[string]interface{},
+	bpmnProcess interface{},
+) (string, string) {
+	errorRef, exists := eventDef["reference"]
+	if !exists {
+		return "GENERAL_ERROR", "General Error"
+	}
+
+	errorRefStr, ok := errorRef.(string)
+	if !ok {
+		return "GENERAL_ERROR", "General Error"
+	}
+
+	bpmnProcessMap, ok := bpmnProcess.(map[string]interface{})
+	if !ok {
+		return "GENERAL_ERROR", "General Error"
+	}
+
+	if elements, exists := bpmnProcessMap["elements"]; exists {
+		if elementsMap, ok := elements.(map[string]interface{}); ok {
+			if errorElement, exists := elementsMap[errorRefStr]; exists {
+				if errorDefMap, ok := errorElement.(map[string]interface{}); ok {
+					errorCode := "GENERAL_ERROR"
+					errorName := "General Error"
+
+					if code, exists := errorDefMap["error_code"]; exists {
+						if codeStr, ok := code.(string); ok {
+							errorCode = codeStr
+						}
+					}
+
+					if name, exists := errorDefMap["name"]; exists {
+						if nameStr, ok := name.(string); ok {
+							errorName = nameStr
+						}
+					}
+
+					logger.Info("Resolved error definition from elements",
+						logger.String("error_ref", errorRefStr),
+						logger.String("error_code", errorCode),
+						logger.String("error_name", errorName))
+
+					return errorCode, errorName
+				}
+			}
+		}
+	}
+
+	logger.Warn("Could not resolve error definition, using default",
+		logger.String("error_ref", errorRefStr))
+	return "GENERAL_ERROR", "General Error"
+}
+
+// getOutgoingFlows extracts outgoing sequence flows from boundary event
+func (hce *HttpConnectorExecutor) getOutgoingFlows(boundaryEvent map[string]interface{}) []string {
+	outgoing, exists := boundaryEvent["outgoing"]
+	if !exists {
+		return []string{}
+	}
+
+	var flows []string
+	if outgoingList, ok := outgoing.([]interface{}); ok {
+		for _, item := range outgoingList {
+			if flowID, ok := item.(string); ok {
+				flows = append(flows, flowID)
+			}
+		}
+	} else if outgoingStr, ok := outgoing.(string); ok {
+		flows = append(flows, outgoingStr)
+	}
+
+	return flows
+}
+
+// evaluateTimerExpression evaluates timer expressions using expression component
+func (hce *HttpConnectorExecutor) evaluateTimerExpression(expression string, token *models.Token) (interface{}, error) {
+	if expression == "" || len(expression) == 0 || expression[0] != '=' {
+		return expression, nil
+	}
+
+	if hce.processComponent == nil {
+		return nil, fmt.Errorf("process component not available for expression evaluation")
+	}
+
+	core := hce.processComponent.GetCore()
+	if core == nil {
+		return nil, fmt.Errorf("core interface not available for expression evaluation")
+	}
+
+	expressionCompInterface := core.GetExpressionComponent()
+	if expressionCompInterface == nil {
+		return nil, fmt.Errorf("expression component not available")
+	}
+
+	type ExpressionEvaluator interface {
+		EvaluateExpressionEngine(expression interface{}, variables map[string]interface{}) (interface{}, error)
+	}
+
+	expressionComp, ok := expressionCompInterface.(ExpressionEvaluator)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast expression component to ExpressionEvaluator interface")
+	}
+
+	result, err := expressionComp.EvaluateExpressionEngine(expression, token.Variables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate FEEL expression '%s': %w", expression, err)
+	}
+
+	logger.Debug("Boundary timer expression evaluated successfully",
+		logger.String("token_id", token.TokenID),
+		logger.String("original_expression", expression),
+		logger.Any("evaluated_result", result),
+		logger.Any("token_variables", token.Variables))
+
+	return result, nil
 }

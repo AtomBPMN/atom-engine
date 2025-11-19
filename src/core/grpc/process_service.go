@@ -10,6 +10,7 @@ package grpc
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -53,9 +54,30 @@ func (s *processServiceServer) StartProcessInstance(
 	}
 
 	// Convert variables from protobuf map to Go map
+	// Parse JSON values to proper types
+	// Конвертируем переменные из protobuf map в Go map
+	// Парсим JSON значения в правильные типы
 	variables := make(map[string]interface{})
 	for key, value := range req.Variables {
-		variables[key] = value
+		// Try to parse as JSON if it looks like JSON
+		// Пытаемся распарсить как JSON если это похоже на JSON
+		if strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") {
+			var parsed interface{}
+			if err := json.Unmarshal([]byte(value), &parsed); err == nil {
+				variables[key] = parsed
+				logger.Debug("Parsed JSON variable",
+					logger.String("key", key),
+					logger.Any("value", parsed))
+			} else {
+				// If parsing failed, keep as string
+				// Если парсинг не удался, оставляем как строку
+				variables[key] = value
+			}
+		} else {
+			// Not JSON, keep as string
+			// Не JSON, оставляем как строку
+			variables[key] = value
+		}
 	}
 
 	// Start process instance
