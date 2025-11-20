@@ -91,6 +91,10 @@ func (er *ExecutorRegistry) registerExecutors() {
 		logger.Bool("hasComponentInterface", er.component != nil),
 	)
 	er.RegisterExecutor(NewCallActivityExecutor(er.component))
+	logger.Info("Registering SubProcessExecutor with process component",
+		logger.Bool("hasComponentInterface", er.component != nil),
+	)
+	er.RegisterExecutor(NewSubProcessExecutor(er.component))
 
 	// Register Send Task and Receive Task executors
 	logger.Info("Registering SendTaskExecutor with process component",

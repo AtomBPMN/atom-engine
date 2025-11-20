@@ -117,7 +117,7 @@ func (twl *TimingWheelLevel) RemoveTimerBySlotAndID(slot int, timerID string) er
 
 // Tick advances level by one tick and returns expired timers
 // Продвигает уровень на один тик и возвращает истекшие таймеры
-func (twl *TimingWheelLevel) Tick() ([]*TimerEntry, []*TimerEntry) {
+func (twl *TimingWheelLevel) Tick(now time.Time) ([]*TimerEntry, []*TimerEntry) {
 	twl.mu.Lock()
 	defer twl.mu.Unlock()
 
@@ -135,9 +135,9 @@ func (twl *TimingWheelLevel) Tick() ([]*TimerEntry, []*TimerEntry) {
 		entry := element.Value.(*TimerEntry)
 		currentSlotList.Remove(element)
 
-		// Check if timer should fire now
-		// Проверяем должен ли таймер сработать сейчас
-		if time.Now().After(entry.Timer.DueDate) || time.Now().Equal(entry.Timer.DueDate) {
+		// Check if timer should fire now using consistent time
+		// Проверяем должен ли таймер сработать сейчас используя единое время
+		if now.After(entry.Timer.DueDate) || now.Equal(entry.Timer.DueDate) {
 			expiredTimers = append(expiredTimers, entry)
 		} else {
 			// Timer needs to be rescheduled to higher level

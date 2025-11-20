@@ -36,6 +36,17 @@ func (ee *EndEventExecutor) Execute(token *models.Token, element map[string]inte
 		logger.String("token_id", token.TokenID),
 		logger.String("element_id", token.CurrentElementID))
 
+	// Check if this token is inside a subprocess
+	// Проверяем находится ли этот токен внутри subprocess
+	if token.SubProcessID != "" && token.ParentTokenID != "" {
+		logger.Info("End event inside subprocess, handling subprocess completion",
+			logger.String("token_id", token.TokenID),
+			logger.String("subprocess_id", token.SubProcessID),
+			logger.String("parent_token_id", token.ParentTokenID))
+		
+		return ee.handleSubProcessEndEvent(token, element)
+	}
+
 	// Check for event definitions to determine end event type
 	// Проверяем event definitions чтобы определить тип конечного события
 	if eventDefinitions, hasEventDefs := element["event_definitions"]; hasEventDefs {
@@ -420,6 +431,145 @@ func (ee *EndEventExecutor) activateErrorBoundaryFlow(
 		NextElements: []string{},
 		Completed:    true,
 	}, nil
+}
+
+// handleSubProcessEndEvent handles end event inside subprocess
+// Обрабатывает конечное событие внутри subprocess
+func (ee *EndEventExecutor) handleSubProcessEndEvent(
+	token *models.Token,
+	element map[string]interface{},
+) (*ExecutionResult, error) {
+	logger.Info("Handling subprocess end event",
+		logger.String("token_id", token.TokenID),
+		logger.String("subprocess_id", token.SubProcessID),
+		logger.String("parent_token_id", token.ParentTokenID))
+
+	// Complete subprocess token
+	token.SetState(models.TokenStateCompleted)
+	if err := ee.processComponent.UpdateToken(token); err != nil {
+		logger.Error("Failed to update subprocess token",
+			logger.String("token_id", token.TokenID),
+			logger.String("error", err.Error()))
+		return &ExecutionResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to update subprocess token: %v", err),
+		}, nil
+	}
+
+	// Find parent token
+	parentToken, err := ee.processComponent.GetStorage().LoadToken(token.ParentTokenID)
+	if err != nil {
+		logger.Error("Failed to load parent token",
+			logger.String("parent_token_id", token.ParentTokenID),
+			logger.String("error", err.Error()))
+		return &ExecutionResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to load parent token: %v", err),
+		}, nil
+	}
+
+	// Get BPMN process to find subprocess element for output mapping
+	bpmnProcess, err := ee.processComponent.GetBPMNProcessForToken(parentToken)
+	if err != nil {
+		logger.Error("Failed to get BPMN process for output mapping",
+			logger.String("parent_token_id", parentToken.TokenID),
+			logger.String("error", err.Error()))
+		// Continue without output mapping
+	}
+
+	// Apply output mapping
+	if bpmnProcess != nil {
+		elements, ok := bpmnProcess["elements"].(map[string]interface{})
+		if ok {
+			if subprocessElement, exists := elements[token.SubProcessID]; exists {
+				if subprocessMap, ok := subprocessElement.(map[string]interface{}); ok {
+					parentToken.Variables = ee.applyOutputMapping(
+						token.Variables,
+						parentToken.Variables,
+						subprocessMap,
+					)
+				}
+			}
+		}
+	}
+
+	// Clear subprocess execution context
+	subprocessKey := fmt.Sprintf("subprocess_executed:%s", token.SubProcessID)
+	parentToken.SetExecutionContext(subprocessKey, true)
+
+	// Clear waiting state
+	parentToken.ClearWaitingFor()
+
+	// Cancel boundary timers/events for subprocess
+	if err := ee.processComponent.CancelBoundaryTimersForToken(parentToken.TokenID); err != nil {
+		logger.Error("Failed to cancel boundary timers",
+			logger.String("parent_token_id", parentToken.TokenID),
+			logger.String("error", err.Error()))
+	}
+
+	// Remove error boundaries
+	ee.processComponent.RemoveErrorBoundariesForToken(parentToken.TokenID)
+
+	logger.Info("Subprocess completed, continuing parent token execution",
+		logger.String("parent_token_id", parentToken.TokenID),
+		logger.String("subprocess_id", token.SubProcessID))
+
+	// Update parent token
+	if err := ee.processComponent.UpdateToken(parentToken); err != nil {
+		logger.Error("Failed to update parent token",
+			logger.String("parent_token_id", parentToken.TokenID),
+			logger.String("error", err.Error()))
+		return &ExecutionResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to update parent token: %v", err),
+		}, nil
+	}
+
+	// Continue parent token execution
+	if err := ee.processComponent.ExecuteToken(parentToken); err != nil {
+		logger.Error("Failed to execute parent token",
+			logger.String("parent_token_id", parentToken.TokenID),
+			logger.String("error", err.Error()))
+		return &ExecutionResult{
+			Success: false,
+			Error:   fmt.Sprintf("failed to execute parent token: %v", err),
+		}, nil
+	}
+
+	return &ExecutionResult{
+		Success:      true,
+		TokenUpdated: true,
+		Completed:    true,
+	}, nil
+}
+
+// applyOutputMapping applies output variable mapping from subprocess to parent
+// Применяет output variable mapping от subprocess к родителю
+func (ee *EndEventExecutor) applyOutputMapping(
+	subprocessVars map[string]interface{},
+	parentVars map[string]interface{},
+	subprocessElement map[string]interface{},
+) map[string]interface{} {
+	// For now, merge all subprocess variables into parent
+	// Full implementation would parse zeebe:ioMapping from extension_elements
+	result := make(map[string]interface{})
+	
+	// Copy parent variables
+	for k, v := range parentVars {
+		result[k] = v
+	}
+	
+	// Merge subprocess variables
+	for k, v := range subprocessVars {
+		result[k] = v
+	}
+
+	logger.Debug("Applied output mapping from subprocess to parent",
+		logger.Int("subprocess_variables", len(subprocessVars)),
+		logger.Int("parent_variables", len(parentVars)),
+		logger.Int("result_variables", len(result)))
+
+	return result
 }
 
 // GetElementType returns element type

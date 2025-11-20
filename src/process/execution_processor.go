@@ -133,6 +133,28 @@ func (ep *ExecutionProcessor) moveTokenToNextElements(
 		return nil
 	}
 
+	// Cancel boundary timers if token is leaving an activity
+	// Отменяем boundary таймеры если токен покидает activity
+	// Boundary timers are bound to specific activity and must be cancelled when token leaves that activity
+	// Boundary таймеры привязаны к конкретной activity и должны отменяться когда токен покидает эту activity
+	if ep.isActivityElement(token.CurrentElementID, bpmnProcess) {
+		logger.Info("Token leaving activity - canceling boundary timers",
+			logger.String("token_id", token.TokenID),
+			logger.String("current_element_id", token.CurrentElementID))
+
+		if err := ep.component.CancelBoundaryTimersForToken(token.TokenID); err != nil {
+			logger.Error("Failed to cancel boundary timers when leaving activity",
+				logger.String("token_id", token.TokenID),
+				logger.String("element_id", token.CurrentElementID),
+				logger.String("error", err.Error()))
+			// Continue execution - boundary timer cancellation is not critical
+		} else {
+			logger.Info("Boundary timers canceled when leaving activity",
+				logger.String("token_id", token.TokenID),
+				logger.String("element_id", token.CurrentElementID))
+		}
+	}
+
 	// Find target elements by flow IDs
 	var targetElements []string
 	for _, flowID := range nextElements {
@@ -223,6 +245,53 @@ func (ep *ExecutionProcessor) findTargetElementByFlowID(flowID string, bpmnProce
 	}
 
 	return ""
+}
+
+// isActivityElement checks if element is an activity type that can have boundary timers
+// Проверяет является ли элемент типом activity который может иметь boundary таймеры
+func (ep *ExecutionProcessor) isActivityElement(elementID string, bpmnProcess *models.BPMNProcess) bool {
+	element, exists := bpmnProcess.Elements[elementID]
+	if !exists {
+		return false
+	}
+
+	elementMap, ok := element.(map[string]interface{})
+	if !ok {
+		return false
+	}
+
+	elementType, exists := elementMap["type"]
+	if !exists {
+		return false
+	}
+
+	elementTypeStr, ok := elementType.(string)
+	if !ok {
+		return false
+	}
+
+	// Activity types that can have boundary timers
+	// Типы activity которые могут иметь boundary таймеры
+	activityTypes := []string{
+		"serviceTask",
+		"userTask",
+		"scriptTask",
+		"sendTask",
+		"receiveTask",
+		"manualTask",
+		"businessRuleTask",
+		"callActivity",
+		"subProcess",
+		"task", // Generic task type
+	}
+
+	for _, activityType := range activityTypes {
+		if elementTypeStr == activityType {
+			return true
+		}
+	}
+
+	return false
 }
 
 // checkProcessCompletion checks if process instance should be completed

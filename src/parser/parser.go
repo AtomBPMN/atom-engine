@@ -41,6 +41,7 @@ type ParseContext struct {
 	ElementCounts  map[string]int
 	AllElements    map[string]interface{}
 	CurrentElement string
+	ParentScope    string // ID of parent scope (null for top-level, subprocess_id for nested)
 }
 
 // XMLElement generic XML element representation
@@ -430,6 +431,10 @@ func (p *BPMNParser) parseAllElements(
 			// Откат к общему парсингу
 			parsedData = p.parseGenericElement(element)
 			if elementID != "" {
+				// Add parent_scope to parsed data
+				if context.ParentScope != "" {
+					parsedData["parent_scope"] = context.ParentScope
+				}
 				context.AllElements[elementID] = parsedData
 				bpmnProcess.AddElement(elementID, parsedData)
 			}
@@ -438,6 +443,10 @@ func (p *BPMNParser) parseAllElements(
 			// Сохранение спарсенных данных
 			elementID := p.getElementID(element)
 			if elementID != "" {
+				// Add parent_scope to parsed data
+				if context.ParentScope != "" {
+					parsedData["parent_scope"] = context.ParentScope
+				}
 				context.AllElements[elementID] = parsedData
 				bpmnProcess.AddElement(elementID, parsedData)
 			}
@@ -461,6 +470,10 @@ func (p *BPMNParser) parseAllElements(
 
 		parsedData := p.parseGenericElement(element)
 		if elementID != "" {
+			// Add parent_scope to parsed data
+			if context.ParentScope != "" {
+				parsedData["parent_scope"] = context.ParentScope
+			}
 			context.AllElements[elementID] = parsedData
 			bpmnProcess.AddElement(elementID, parsedData)
 		}
@@ -468,12 +481,29 @@ func (p *BPMNParser) parseAllElements(
 
 	// Parse child elements recursively
 	// Рекурсивный парсинг дочерних элементов
+	
+	// If current element is a subprocess, set its ID as parent_scope for children
+	// Если текущий элемент - подпроцесс, устанавливаем его ID как parent_scope для дочерних элементов
+	savedParentScope := context.ParentScope
+	if elementType == "subProcess" {
+		elementID := p.getElementID(element)
+		if elementID != "" {
+			context.ParentScope = elementID
+			logger.Debug("Entering subprocess scope",
+				logger.String("subprocess_id", elementID))
+		}
+	}
+	
 	for _, child := range element.Children {
 		err := p.parseAllElements(child, context, bpmnProcess)
 		if err != nil {
 			return err
 		}
 	}
+	
+	// Restore parent scope after processing children
+	// Восстанавливаем parent scope после обработки дочерних элементов
+	context.ParentScope = savedParentScope
 
 	return nil
 }

@@ -42,7 +42,7 @@ func (htw *HierarchicalTimingWheel) processTick() {
 
 	// Process L0 (most frequent level)
 	// Обрабатываем L0 (самый частый уровень)
-	expiredTimers, overflowTimers := htw.levels[0].Tick()
+	expiredTimers, overflowTimers := htw.levels[0].Tick(now)
 
 	// Fire expired timers
 	// Запускаем истекшие таймеры

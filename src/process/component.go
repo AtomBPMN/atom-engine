@@ -127,6 +127,7 @@ type ComponentInterface interface {
 	GetJobsComponent() interface{}
 	GetMessagesComponent() interface{}
 	GetCore() CoreInterface
+	GetStorage() storage.Storage
 }
 
 // TimerRequest represents timer creation request from flow element
@@ -261,6 +262,12 @@ func (c *Component) SetCore(core CoreInterface) {
 // Возвращает интерфейс core
 func (c *Component) GetCore() CoreInterface {
 	return c.core
+}
+
+// GetStorage returns storage interface
+// Возвращает интерфейс storage
+func (c *Component) GetStorage() storage.Storage {
+	return c.storage
 }
 
 // ComponentLifecycleInterface implementation

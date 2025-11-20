@@ -66,6 +66,10 @@ type Token struct {
 	// Родительский токен для подпроцессов или параллельных потоков
 	ParentTokenID string `json:"parent_token_id,omitempty"`
 
+	// SubProcess element ID this token is executing inside
+	// ID элемента SubProcess внутри которого выполняется токен
+	SubProcessID string `json:"subprocess_id,omitempty"`
+
 	// Child tokens for parallel execution
 	// Дочерние токены для параллельного выполнения
 	ChildTokenIDs []string `json:"child_token_ids,omitempty"`

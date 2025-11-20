@@ -145,31 +145,49 @@ func (ps *ProcessStarter) findStartEvent(bpmnProcess *models.BPMNProcess) (strin
 			if element, exists := bpmnProcess.Elements[flowNodeID]; exists {
 				if elementMap, ok := element.(map[string]interface{}); ok {
 					if elementType, exists := elementMap["type"]; exists && elementType == "startEvent" {
-						logger.Info("Found start event for target process",
-							logger.String("start_event_id", flowNodeID),
-							logger.String("process_id", bpmnProcess.ProcessID))
-						return flowNodeID, nil
+						// Check parent_scope to ensure this is a top-level start event
+						parentScope, hasParentScope := elementMap["parent_scope"]
+						if !hasParentScope || parentScope == nil || parentScope == bpmnProcess.ProcessID || parentScope == "" {
+							logger.Info("Found top-level start event for target process",
+								logger.String("start_event_id", flowNodeID),
+								logger.String("process_id", bpmnProcess.ProcessID),
+								logger.Any("parent_scope", parentScope))
+							return flowNodeID, nil
+						} else {
+							logger.Debug("Skipping subprocess start event",
+								logger.String("start_event_id", flowNodeID),
+								logger.Any("parent_scope", parentScope))
+						}
 					}
 				}
 			}
 		}
 	}
 
-	// Fallback: search all elements
+	// Fallback: search all elements (only top-level start events)
 	logger.Warn("No process-specific flow nodes found, searching all elements",
 		logger.String("process_id", bpmnProcess.ProcessID))
 
 	for elementID, element := range bpmnProcess.Elements {
 		if elementMap, ok := element.(map[string]interface{}); ok {
 			if elementType, exists := elementMap["type"]; exists && elementType == "startEvent" {
-				logger.Info("Found start event (fallback search)",
-					logger.String("start_event_id", elementID))
-				return elementID, nil
+				// Check parent_scope to ensure this is a top-level start event
+				parentScope, hasParentScope := elementMap["parent_scope"]
+				if !hasParentScope || parentScope == nil || parentScope == bpmnProcess.ProcessID || parentScope == "" {
+					logger.Info("Found top-level start event (fallback search)",
+						logger.String("start_event_id", elementID),
+						logger.Any("parent_scope", parentScope))
+					return elementID, nil
+				} else {
+					logger.Debug("Skipping subprocess start event in fallback",
+						logger.String("start_event_id", elementID),
+						logger.Any("parent_scope", parentScope))
+				}
 			}
 		}
 	}
 
-	return "", fmt.Errorf("no start event found in process")
+	return "", fmt.Errorf("no top-level start event found in process")
 }
 
 // isMessageStartEvent checks if start event is Message Start Event
