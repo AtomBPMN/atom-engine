@@ -107,7 +107,7 @@ graph TB
 
 ```bash
 # Clone the repository
-git clone https://github.com/sembaev-a-a/atom-engine.git
+git clone https://github.com/AtomBPMN/atom-engine.git
 cd atom-engine
 
 # Build the engine
